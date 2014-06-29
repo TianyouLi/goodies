@@ -12,6 +12,13 @@
 (transient-mark-mode t)
 (column-number-mode t)
 
+
+;; -------------------------------------------
+;; set line number
+;; -------------------------------------------
+(global-linum-mode t)
+(setq linum-format "%4d \u2502 ")
+
 ;; ------------------------------------------
 ;; enable gtags
 ;; ------------------------------------------
@@ -37,11 +44,11 @@
 
 
 ;;; install color theme
-(add-to-list 'load-path
-	     "~/.elisp/")
-(require 'color-theme)
-(require 'color-themes)
-(color-theme-dark-laptop)
+;; (add-to-list 'load-path
+;; 	     "~/.elisp/")
+;; (require 'color-theme)
+;; (require 'color-themes)
+;; (color-theme-dark-laptop)
 
 ;;; install ido
 (require 'ido)
