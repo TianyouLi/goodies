@@ -1,0 +1,35 @@
+{
+		"builders": [
+				{
+						"type": "docker",
+						"image": "ubuntu:14.04",
+						"export_path": "ubuntu-dev.tar"
+				}
+		],
+
+		"provisioners": [
+				{
+						"type": "file",
+						"source": "run.sh",
+						"destination": "/etc/init.d/run.sh"
+				},
+				{
+						"type": "shell",
+						"scripts": [
+								"install.sh"
+						]
+				}
+		],
+		
+		"post-processors": [
+				[
+						{
+								"type": "docker-import",
+								"repository": "lity/ubuntu-dev",
+								"tag": "0.1"
+						},
+						"docker-push"
+				]
+		]
+}
+
