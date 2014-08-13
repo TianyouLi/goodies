@@ -13,4 +13,4 @@
 ## Above information will update according to any changes of system!!!
 #######################################################################
 
-sudo docker run --privileged -d -h lity-ubuntu-dev --name "lity-ubuntu-dev" -p 8022:22 -p 50389:3389  lity/ubuntu-dev:0.1 /bin/bash -e /etc/init.d/run.sh
+sudo docker run --privileged -d -h lity-ubuntu-dev --name "lity-ubuntu-dev" -p 7022:22 -p 40389:3389  lity/ubuntu-dev:0.2 /bin/bash -e /etc/init.d/run.sh
