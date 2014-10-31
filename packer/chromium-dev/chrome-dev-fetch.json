@@ -1,0 +1,30 @@
+{
+		"builders": [
+				{
+						"type": "docker",
+						"image": "tli7-sto.sh.intel.com:8080/chrome-dev:0.1",
+						"export_path": "chrome-dev.tar"
+				}
+		],
+
+		"provisioners": [
+				{
+						"type": "shell",
+						"scripts": [
+								"scripts/fetch.sh"
+						]
+				}
+		],
+		
+		"post-processors": [
+				[
+						{
+								"type": "docker-import",
+								"repository": "tli7-sto.sh.intel.com:8080/chrome-dev",
+								"tag": "0.2"
+						},
+						"docker-push"
+				]
+		]
+}
+
