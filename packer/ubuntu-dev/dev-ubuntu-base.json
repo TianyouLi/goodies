@@ -2,7 +2,7 @@
 		"builders": [
 				{
 						"type": "docker",
-						"image": "ubuntu:14.04",
+						"image": "ubuntu:12.04",
 						"export_path": "ubuntu-dev.tar"
 				}
 		],
@@ -25,7 +25,7 @@
 				[
 						{
 								"type": "docker-import",
-								"repository": "lity/ubuntu-dev",
+								"repository": "lity/ubuntu12-dev",
 								"tag": "0.1"
 						},
 						"docker-push"

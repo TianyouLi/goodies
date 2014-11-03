@@ -2,16 +2,21 @@
 		"builders": [
 				{
 						"type": "docker",
-						"image": "lity/ubuntu12-dev:0.2",
-						"export_path": "chrome-dev.tar"
+						"image": "ubuntu:14.04",
+						"export_path": "ubuntu-dev.tar"
 				}
 		],
 
 		"provisioners": [
 				{
+						"type": "file",
+						"source": "run.sh",
+						"destination": "/etc/init.d/run.sh"
+				},
+				{
 						"type": "shell",
 						"scripts": [
-								"scripts/depot_tools.sh"
+								"install.sh"
 						]
 				}
 		],
@@ -20,7 +25,7 @@
 				[
 						{
 								"type": "docker-import",
-								"repository": "tli7-sto.sh.intel.com:8080/chrome-dev",
+								"repository": "lity/ubuntu14-dev",
 								"tag": "0.1"
 						},
 						"docker-push"

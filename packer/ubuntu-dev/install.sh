@@ -43,6 +43,9 @@ ${aptool} install libsaxonb-java
 # install make tools
 ${aptool} install make
 
+# install sudo tools
+${aptool} install sudo
+
 # change root password
 echo 'root:123456' | chpasswd
 

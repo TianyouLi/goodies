@@ -2,7 +2,7 @@
 		"builders": [
 				{
 						"type": "docker",
-						"image": "lity/ubuntu12-dev:0.2",
+						"image": "tli7-sto.sh.intel.com:8080/chrome-dev:0.2",
 						"export_path": "chrome-dev.tar"
 				}
 		],
@@ -11,7 +11,7 @@
 				{
 						"type": "shell",
 						"scripts": [
-								"scripts/depot_tools.sh"
+								"scripts/sync.sh"
 						]
 				}
 		],
@@ -21,7 +21,7 @@
 						{
 								"type": "docker-import",
 								"repository": "tli7-sto.sh.intel.com:8080/chrome-dev",
-								"tag": "0.1"
+								"tag": "0.3"
 						},
 						"docker-push"
 				]
