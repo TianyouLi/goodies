@@ -13,7 +13,13 @@ deb-src http://archive.ubuntu.com/ubuntu/ precise multiverse
 " | tee -a /etc/apt/sources.list
 
 ${aptool} update
+
+# install lsb-release, not default installed on 12.04
 ${aptool} install lsb-release
+
+# install msttcorefonts
+echo ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true | debconf-set-selections
+${aptool} install ttf-mscorefonts-installer
 
 export PATH=/home/lity/chromium/depot_tools:$PATH
 ls /home/lity/chromium
