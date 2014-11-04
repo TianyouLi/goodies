@@ -17,4 +17,4 @@ mkdir -p /home/lity/chromium
 cd /home/lity/chromium
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 
-echo "export PATH=/home/lity/depot_tools:$PATH\n" >> /home/lity/.bashrc
+echo "export PATH=/home/lity/chromium/depot_tools:$PATH\n" >> /home/lity/.bashrc
