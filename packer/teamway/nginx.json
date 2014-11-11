@@ -2,22 +2,20 @@
 		"builders": [
 				{
 						"type": "docker",
-						"image": "ubuntu:12.04",
-						"export_path": "ubuntu-dev.tar"
+						"image": "lity/ubuntu14-dev:0.2",
+						"export_path": "nginx.tar"
 				}
 		],
 
 		"provisioners": [
 				{
 						"type": "file",
-						"source": "run.sh",
-						"destination": "/etc/init.d/run.sh"
+						"source": "./scripts",
+						"destination": "/tmp"
 				},
 				{
 						"type": "shell",
-						"scripts": [
-								"install.sh"
-						]
+						"inline": ["cd /tmp/scripts/build/nginx/", "/tmp/scripts/build/nginx/nginx.sh"]
 				}
 		],
 		
@@ -25,7 +23,7 @@
 				[
 						{
 								"type": "docker-import",
-								"repository": "lity/ubuntu12-dev",
+								"repository": "lity/nginx",
 								"tag": "0.1"
 						},
 						"docker-push"

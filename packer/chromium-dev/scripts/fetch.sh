@@ -3,7 +3,6 @@ HOME=/root
 PS1="root@host"
 
 sudo /etc/init.d/privoxy restart
-. /home/lity/.bashrc
 export http_proxy="http://localhost:8118"
 export socks_proxy="proxy.jf.intel.com:1080"
 export all_proxy=${socks_proxy}
