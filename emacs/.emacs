@@ -1,5 +1,6 @@
 (setq inhibit-startup-message t)
 (menu-bar-mode nil)
+(tool-bar-mode nil)
 (setq make-backup-files nil)
 
 ;; ------------------------------------------
