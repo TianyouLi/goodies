@@ -90,6 +90,7 @@
          ("\\.h$" . c++-mode)
          ("\\.hh$". c++-mode)
          ("\\.csh$" . csh-mode)
+				 ("\\.py$" . python-mode)
          ("Makefile*" . makefile-gmake-mode)
          ("makefile*" . makefile-gmake-mode)
          )auto-mode-alist))
@@ -130,3 +131,25 @@
 			`((".*" . ,temporary-file-directory)))
 (setq auto-save-file-name-transforms
 			`((".*" ,temporary-file-directory t)))
+
+;; python hook
+(defun my-python-mode-hook()
+	(setq indent-tabs-mode nil)
+	(setq tab-width 2)
+	(setq python-indent 2)
+	(setq-default tab-width 2)
+	(setq-default indent-tabs-mode nil)
+)
+
+(add-hook 'python-mode-hook 'my-python-mode-hook)
+
+;; xml hook
+(defun my-xml-mode-hook()
+	(setq indent-tabs-mode nil)
+	(setq tab-width 2)
+	(setq-default tab-width 2)
+	(setq-default indent-tabs-mode nil)
+)
+
+(add-hook 'nxml-mode-hook 'my-xml-mode-hook)
+
