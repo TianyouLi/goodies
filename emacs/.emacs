@@ -45,11 +45,11 @@
 
 
 ;;; install color theme
-(load-file "~/.elisp/color-theme.el")
-(require 'color-theme)
-(if window-system
-		(color-theme-gnome2)
-	(color-theme-dark-laptop))
+;; (load-file "~/.elisp/color-theme.el")
+;; (require 'color-theme)
+;; (if window-system
+;; 		(color-theme-gnome2)
+;; 	(color-theme-dark-laptop))
 
 ;;; install ido
 (require 'ido)
