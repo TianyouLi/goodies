@@ -43,6 +43,8 @@
 (global-set-key [(f2)] 'delete-other-windows)
 
 
+;; add load path
+(add-to-list 'load-path "~/.elisp/")
 
 ;;; install color theme
 ;; (load-file "~/.elisp/color-theme.el")
@@ -153,3 +155,19 @@
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
+;; javascript hook
+(defun my-js-mode-hook()
+	(setq indent-tabs-mode nil)
+	(setq tab-width 2)
+	(setq-default tab-width 2)
+	(setq-default indent-tabs-mode nil)
+  (setq js-indent-level 2)
+)
+
+(add-hook 'js-mode-hook 'my-js-mode-hook)
+
+;; jade mode
+(require 'sws-mode)
+(require 'jade-mode)
+(add-to-list 'auto-mode-alist '("\\.styl$" . sws-mode))
+(add-to-list 'auto-mode-alist '("\\.jade$" . jade-mode))
