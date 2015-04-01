@@ -1,3 +1,15 @@
+;;; Emacs is not a package manager, and here we load its package manager!
+(require 'package)
+(dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
+									("elpa" . "http://tromey.com/elpa/")
+									;; TODO: Maybe, use this after emacs24 is released
+									;; (development versions of packages)
+									("melpa" . "http://melpa.milkbox.net/packages/")
+									))
+	(add-to-list 'package-archives source t))
+(package-initialize)
+
+
 (setq inhibit-startup-message t)
 (menu-bar-mode nil)
 (tool-bar-mode nil)
@@ -156,13 +168,22 @@
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
 ;; javascript hook
+(require 'flycheck)
 (defun my-js-mode-hook()
 	(setq indent-tabs-mode nil)
 	(setq tab-width 2)
 	(setq-default tab-width 2)
 	(setq-default indent-tabs-mode nil)
   (setq js-indent-level 2)
+	(flycheck-mode t)
+	(tern-mode t)
+  (auto-complete-mode t)
 )
+;; setup tern
+(eval-after-load 'tern
+	'(progn
+		 (require 'tern-auto-complete)
+		 (tern-ac-setup)))
 
 (add-hook 'js-mode-hook 'my-js-mode-hook)
 
