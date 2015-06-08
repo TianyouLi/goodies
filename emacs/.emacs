@@ -1,12 +1,12 @@
 ;;; Emacs is not a package manager, and here we load its package manager!
 (require 'package)
-(dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
-									("elpa" . "http://tromey.com/elpa/")
-									;; TODO: Maybe, use this after emacs24 is released
-									;; (development versions of packages)
-									("melpa" . "http://melpa.milkbox.net/packages/")
-									))
-	(add-to-list 'package-archives source t))
+;; (dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
+;; 									("elpa" . "http://tromey.com/elpa/")
+;; 									;; TODO: Maybe, use this after emacs24 is released
+;; 									;; (development versions of packages)
+;; 									("melpa" . "http://melpa.milkbox.net/packages/")
+;; 									))
+;; 	(add-to-list 'package-archives source t))
 (package-initialize)
 
 
@@ -167,6 +167,13 @@
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
+;; js doc support
+(require 'js-doc)
+(setq js-doc-mail-address "tianyou.li@gmail.com"
+      js-doc-author (format "Tianyou Li <%s>" js-doc-mail-address)
+      js-doc-url "https://github.com/tianyouli"
+      js-doc-license "Intel")
+
 ;; javascript hook
 (require 'flycheck)
 (defun my-js-mode-hook()
@@ -178,7 +185,10 @@
 	(flycheck-mode t)
 	(tern-mode t)
   (auto-complete-mode t)
+	(define-key js-mode-map "\C-ci" 'js-doc-insert-function-doc)
+	(define-key js-mode-map "@" 'js-doc-insert-tag)
 )
+
 ;; setup tern
 (eval-after-load 'tern
 	'(progn
