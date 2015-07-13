@@ -1,12 +1,12 @@
 ;;; Emacs is not a package manager, and here we load its package manager!
 (require 'package)
-;; (dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
-;; 									("elpa" . "http://tromey.com/elpa/")
-;; 									;; TODO: Maybe, use this after emacs24 is released
-;; 									;; (development versions of packages)
-;; 									("melpa" . "http://melpa.milkbox.net/packages/")
-;; 									))
-;; 	(add-to-list 'package-archives source t))
+(dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
+		  ("elpa" . "http://tromey.com/elpa/")
+		  ;; TODO: Maybe, use this after emacs24 is released
+		  ;; (development versions of packages)
+		  ("melpa" . "http://melpa.milkbox.net/packages/")
+		  ))
+  (add-to-list 'package-archives source t))
 (package-initialize)
 
 
@@ -30,7 +30,14 @@
 ;; set line number
 ;; -------------------------------------------
 (global-linum-mode t)
-(setq linum-format "%4d \u2502 ")
+(setq linum-format "%d ")
+
+;; -------------------------------------------
+;; highlight current line
+;; -------------------------------------------
+(global-hl-line-mode t)
+(set-face-background hl-line-face "gray38")
+
 
 ;; ------------------------------------------
 ;; enable gtags
@@ -168,11 +175,11 @@
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
 ;; js doc support
-(require 'js-doc)
-(setq js-doc-mail-address "tianyou.li@gmail.com"
-      js-doc-author (format "Tianyou Li <%s>" js-doc-mail-address)
-      js-doc-url "https://github.com/tianyouli"
-      js-doc-license "Intel")
+;; (require 'js-doc)
+;; (setq js-doc-mail-address "tianyou.li@gmail.com"
+;;       js-doc-author (format "Tianyou Li <%s>" js-doc-mail-address)
+;;       js-doc-url "https://github.com/tianyouli"
+;;       js-doc-license "Intel")
 
 ;; javascript hook
 (require 'flycheck)
