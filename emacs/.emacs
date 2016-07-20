@@ -12,7 +12,7 @@
 
 (setq inhibit-startup-message t)
 (menu-bar-mode nil)
-(tool-bar-mode nil)
+;;(tool-bar-mode nil)
 (setq make-backup-files nil)
 
 ;; ------------------------------------------
@@ -36,7 +36,7 @@
 ;; highlight current line
 ;; -------------------------------------------
 (global-hl-line-mode t)
-(set-face-background hl-line-face "gray38")
+(set-face-background hl-line-face "blue")
 
 
 ;; ------------------------------------------
@@ -182,19 +182,19 @@
 ;;       js-doc-license "Intel")
 
 ;; javascript hook
-(require 'flycheck)
-(defun my-js-mode-hook()
-	(setq indent-tabs-mode nil)
-	(setq tab-width 2)
-	(setq-default tab-width 2)
-	(setq-default indent-tabs-mode nil)
-  (setq js-indent-level 2)
-	(flycheck-mode t)
-	(tern-mode t)
-  (auto-complete-mode t)
-	(define-key js-mode-map "\C-ci" 'js-doc-insert-function-doc)
-	(define-key js-mode-map "@" 'js-doc-insert-tag)
-)
+;; (require 'flycheck)
+;; (defun my-js-mode-hook()
+;; 	(setq indent-tabs-mode nil)
+;; 	(setq tab-width 2)
+;; 	(setq-default tab-width 2)
+;; 	(setq-default indent-tabs-mode nil)
+;;   (setq js-indent-level 2)
+;; 	(flycheck-mode t)
+;; 	(tern-mode t)
+;;   (auto-complete-mode t)
+;; 	(define-key js-mode-map "\C-ci" 'js-doc-insert-function-doc)
+;; 	(define-key js-mode-map "@" 'js-doc-insert-tag)
+;; )
 
 ;; setup tern
 (eval-after-load 'tern
