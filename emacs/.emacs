@@ -36,8 +36,10 @@
 ;; highlight current line
 ;; -------------------------------------------
 (global-hl-line-mode t)
-(set-face-background hl-line-face "blue")
-
+;; (set-face-attribute hl-line-face nil :underline t)
+(set-face-foreground 'highlight nil)
+(set-face-background 'highlight nil)
+(set-face-underline-p 'highlight t)
 
 ;; ------------------------------------------
 ;; enable gtags
