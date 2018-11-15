@@ -34,3 +34,6 @@ git config --global color.ui true
 
 ### configure git cache
 git config --global credential.helper 'cache --timeout=604800'
+
+### add some tools to bin path
+sudo ln -s ${BASEDIR}/git-clang-format /usr/bin/git-clang-format
