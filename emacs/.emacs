@@ -118,27 +118,41 @@
          ("makefile*" . makefile-gmake-mode)
          )auto-mode-alist))
 
+(require 'clang-format)
+(require 'google-c-style)
+
 ;; c hook
-(defun my-c-mode-common-hook()
-  (setq tab-width 2 indent-tabs-mode nil)
-  ;;; hungry-delete and auto-newline
-  ;;  (c-toggle-auto-hungry-state 1)
-  (c-toggle-syntactic-indentation 1)
-  (define-key c-mode-base-map (kbd "<return>") 'newline-and-indent)
-  (define-key c-mode-base-map [tab] 'indent-for-tab-command)
-  (local-set-key [(return)] 'newline-and-indent)
-  (setq c-macro-shrink-window-flag t)
-  (setq c-macro-preprocessor "cpp")
-  (setq c-macro-cppflags " ")
-  (setq c-macro-prompt-flag t)
-  (setq abbrev-mode t)
-)
-(add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
+;; (defun my-c-mode-common-hook()
+;;   (setq tab-width 2 indent-tabs-mode nil)
+;;   ;;; hungry-delete and auto-newline
+;;   ;;  (c-toggle-auto-hungry-state 1)
+;;   (c-toggle-syntactic-indentation 1)
+;;   (define-key c-mode-base-map (kbd "<return>") 'newline-and-indent)
+;;   (define-key c-mode-base-map [tab] 'indent-for-tab-command)
+;;   (local-set-key [(return)] 'newline-and-indent)
+;;   (setq c-macro-shrink-window-flag t)
+;;   (setq c-macro-preprocessor "cpp")
+;;   (setq c-macro-cppflags " ")
+;;   (setq c-macro-prompt-flag t)
+;;   (setq abbrev-mode t)
+;; )
+;; (add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
+
+;; (defun clang-format-region-google (s e)
+;; 	(interactive
+;; 	 (if (use-region-p)
+;; 			 (list (region-beginning) (region-end))
+;; 		 (list (point) (point))))
+;; 	(clang-format-region s e "google"))
+
+
+(add-hook 'c-mode-common-hook 'google-make-newline-indent)
 
 ;; c++ hook
 (defun my-c++-mode-hook()
-  (setq tab-width 2 indent-tabs-mode nil)
-  (setq c-basic-offset 2)
+	(fset 'c-indent-region 'clang-format-region)
+  (setq tab-width 4 indent-tabs-mode nil)
+  (setq c-basic-offset 4)
   (local-set-key [(return)] 'newline-and-indent)
   (define-key c++-mode-map (kbd "<return>") 'newline-and-indent)
   (define-key c++-mode-map [tab] 'indent-for-tab-command)
