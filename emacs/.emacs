@@ -35,11 +35,11 @@
 ;; -------------------------------------------
 ;; highlight current line
 ;; -------------------------------------------
-(global-hl-line-mode t)
+;(global-hl-line-mode t)
 ;; (set-face-attribute hl-line-face nil :underline t)
-(set-face-foreground 'highlight nil)
-(set-face-background 'highlight nil)
-(set-face-underline-p 'highlight t)
+;(set-face-foreground 'highlight nil)
+;(set-face-background 'highlight nil)
+;(set-face-underline-p 'highlight t)
 
 ;; ------------------------------------------
 ;; enable gtags
@@ -145,23 +145,22 @@
 ;; 		 (list (point) (point))))
 ;; 	(clang-format-region s e "google"))
 
-
+(add-hook 'c++-mode-hook 'google-set-c-style)
 (add-hook 'c-mode-common-hook 'google-make-newline-indent)
 
 ;; c++ hook
-(defun my-c++-mode-hook()
-	(fset 'c-indent-region 'clang-format-region)
-  (setq tab-width 4 indent-tabs-mode nil)
-  (setq c-basic-offset 4)
-  (local-set-key [(return)] 'newline-and-indent)
-  (define-key c++-mode-map (kbd "<return>") 'newline-and-indent)
-  (define-key c++-mode-map [tab] 'indent-for-tab-command)
-  (define-key c++-mode-map [(f7)] 'compile)
-  (set (make-local-variable 'compile-command)
-       (concat "make "))
-)
+;; (defun my-c++-mode-hook()
+;; 	(fset 'c-indent-region 'clang-format-region)
+;;   (setq tab-width 4 indent-tabs-mode nil)
+;;   (setq c-basic-offset 4)
+;;   (local-set-key [(return)] 'newline-and-indent)
+;;   (define-key c++-mode-map (kbd "<return>") 'newline-and-indent)
+;;   (define-key c++-mode-map [tab] 'indent-for-tab-command)
+;;   (define-key c++-mode-map [(f7)] 'compile)
+;;   (set (make-local-variable 'compile-command)
+;;        (concat "make "))
+;; )
 
-(add-hook 'c++-mode-hook 'my-c++-mode-hook)
 
 ;; backup files settings
 (setq backup-directory-alist
