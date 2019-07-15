@@ -20,7 +20,7 @@ if [ "$PROXY_NAME" == "default" ]; then
 fi
 
 if [ "$PROXY_NAME" == "google gerrit" ]; then
-		http_proxy="http://{your_password}child-prc.intel.com:914"
+		http_proxy="http://{your_password}@child-prc.intel.com:914"
 		https_proxy=${http_proxy}
 fi
 
