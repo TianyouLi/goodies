@@ -9,11 +9,22 @@
   (add-to-list 'package-archives source t))
 (package-initialize)
 
-
 (setq inhibit-startup-message t)
 (menu-bar-mode nil)
 ;;(tool-bar-mode nil)
 (setq make-backup-files nil)
+
+
+;; ------------------------------------------
+;; setup req-package
+;; ------------------------------------------
+(require 'req-package)
+
+;; (req-package el-get ;; prepare el-get (optional)
+;;   :force t ;; load package immediately, no dependency resolution
+;;   :config
+;;   (add-to-list 'el-get-recipe-path "~/.emacs.d/el-get/el-get/recipes"))
+;;  (el-get 'sync))
 
 ;; ------------------------------------------
 ;; font lock config
@@ -45,6 +56,8 @@
 ;; enable gtags
 ;; ------------------------------------------
 ;; (gtags-mode 1)
+;;
+ 
 
 ;; ------------------------------------------
 ;; keyboad map config
@@ -88,79 +101,80 @@
 (setq c-basic-offset 2)
 (setq indent-tabs-mode nil)
 
-;; gdb config
-(add-hook 'gud-mode-hook
-          '(lambda ()
-             (local-set-key [home] ; move to beginning of line, after prompt
-                            'comint-bol)
-             (local-set-key [up] ; cycle backward through command history
-                            '(lambda () (interactive)
-                               (if (comint-after-pmark-p)
-                                   (comint-previous-input 1)
-                                 (previous-line 1))))
-             (local-set-key [down] ; cycle forward through command history
-                            '(lambda () (interactive)
-                               (if (comint-after-pmark-p)
-                                   (comint-next-input 1)
-                                 (forward-line 1))))
-             ))
 
-;; alias list
-(setq auto-mode-alist
-      (append
-       '(
-         ("\\.sh$" . sh-mode)
-         ("\\.h$" . c++-mode)
-         ("\\.hh$". c++-mode)
-         ("\\.csh$" . csh-mode)
-				 ("\\.py$" . python-mode)
-         ("Makefile*" . makefile-gmake-mode)
-         ("makefile*" . makefile-gmake-mode)
-         )auto-mode-alist))
+;; ------------------------------------------
+;; company mode
+;; ------------------------------------------
+(req-package company
+	:ensure t
+	:force true
+  :config
+	(add-hook 'after-init-hook 'global-company-mode)
+	(global-set-key (kbd "M-/") 'company-complete-common-or-cycle)
+	(setq company-idle-delay 0))
 
-(require 'clang-format)
-(require 'google-c-style)
+;; ------------------------------------------
+;; flycheck mode
+;; ------------------------------------------
+(req-package flycheck
+  :config
+	(global-flycheck-mode))
 
-;; c hook
-;; (defun my-c-mode-common-hook()
-;;   (setq tab-width 2 indent-tabs-mode nil)
-;;   ;;; hungry-delete and auto-newline
-;;   ;;  (c-toggle-auto-hungry-state 1)
-;;   (c-toggle-syntactic-indentation 1)
-;;   (define-key c-mode-base-map (kbd "<return>") 'newline-and-indent)
-;;   (define-key c-mode-base-map [tab] 'indent-for-tab-command)
-;;   (local-set-key [(return)] 'newline-and-indent)
-;;   (setq c-macro-shrink-window-flag t)
-;;   (setq c-macro-preprocessor "cpp")
-;;   (setq c-macro-cppflags " ")
-;;   (setq c-macro-prompt-flag t)
-;;   (setq abbrev-mode t)
-;; )
-;; (add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
 
-;; (defun clang-format-region-google (s e)
-;; 	(interactive
-;; 	 (if (use-region-p)
-;; 			 (list (region-beginning) (region-end))
-;; 		 (list (point) (point))))
-;; 	(clang-format-region s e "google"))
+(require 'ggtags)
+(add-hook 'c-mode-common-hook
+          (lambda ()
+            (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
+              (ggtags-mode 1))))
 
+;; C++ dev config - irony config
+(add-hook 'c++-mode-hook 'irony-mode)
+(add-hook 'c-mode-hook 'irony-mode)
+(add-hook 'objc-mode-hook 'irony-mode)
+(add-hook 'irony-mode-hook 'irony-cdb-autosetup-compile-options)
+
+;; C++ dev config - google style config
 (add-hook 'c++-mode-hook 'google-set-c-style)
 (add-hook 'c-mode-common-hook 'google-make-newline-indent)
 
-;; c++ hook
-;; (defun my-c++-mode-hook()
-;; 	(fset 'c-indent-region 'clang-format-region)
-;;   (setq tab-width 4 indent-tabs-mode nil)
-;;   (setq c-basic-offset 4)
-;;   (local-set-key [(return)] 'newline-and-indent)
-;;   (define-key c++-mode-map (kbd "<return>") 'newline-and-indent)
-;;   (define-key c++-mode-map [tab] 'indent-for-tab-command)
-;;   (define-key c++-mode-map [(f7)] 'compile)
-;;   (set (make-local-variable 'compile-command)
-;;        (concat "make "))
-;; )
 
+;; gdb config
+(add-hook
+ 'gud-mode-hook
+ '(lambda ()
+		(local-set-key
+		 [home] ; move to beginning of line, after prompt
+		 'comint-bol)
+		(local-set-key
+		 [up] ; cycle backward through command history
+		 '(lambda () (interactive)
+				(if (comint-after-pmark-p)
+						(comint-previous-input 1)
+					(previous-line 1))))
+		(local-set-key
+		 [down] ; cycle forward through command history
+		 '(lambda () (interactive)
+				(if (comint-after-pmark-p)
+						(comint-next-input 1)
+					(forward-line 1))))
+		))
+
+;; alias list
+(setq
+ auto-mode-alist
+ (append
+	'(
+		("\\.sh$" . sh-mode)
+		("\\.h$" . c++-mode)
+		("\\.hh$". c++-mode)
+		("\\.csh$" . csh-mode)
+		("\\.py$" . python-mode)
+		("Makefile*" . makefile-gmake-mode)
+		("makefile*" . makefile-gmake-mode)
+		)auto-mode-alist))
+
+(require 'clang-format)
+(require 'google-c-style)
 
 ;; backup files settings
 (setq backup-directory-alist
@@ -189,28 +203,6 @@
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
-;; js doc support
-;; (require 'js-doc)
-;; (setq js-doc-mail-address "tianyou.li@gmail.com"
-;;       js-doc-author (format "Tianyou Li <%s>" js-doc-mail-address)
-;;       js-doc-url "https://github.com/tianyouli"
-;;       js-doc-license "Intel")
-
-;; javascript hook
-;; (require 'flycheck)
-;; (defun my-js-mode-hook()
-;; 	(setq indent-tabs-mode nil)
-;; 	(setq tab-width 2)
-;; 	(setq-default tab-width 2)
-;; 	(setq-default indent-tabs-mode nil)
-;;   (setq js-indent-level 2)
-;; 	(flycheck-mode t)
-;; 	(tern-mode t)
-;;   (auto-complete-mode t)
-;; 	(define-key js-mode-map "\C-ci" 'js-doc-insert-function-doc)
-;; 	(define-key js-mode-map "@" 'js-doc-insert-tag)
-;; )
-
 ;; setup tern
 (eval-after-load 'tern
 	'(progn
@@ -224,3 +216,15 @@
 (require 'jade-mode)
 (add-to-list 'auto-mode-alist '("\\.styl$" . sws-mode))
 (add-to-list 'auto-mode-alist '("\\.jade$" . jade-mode))
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(package-selected-packages (quote (ggtags rtags req-package company-shell company))))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )
