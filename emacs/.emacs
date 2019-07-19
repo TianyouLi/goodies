@@ -9,22 +9,16 @@
   (add-to-list 'package-archives source t))
 (package-initialize)
 
+;; Bootstrap `use-package'
+(unless (package-installed-p 'use-package)
+  (package-refresh-contents)
+  (package-install 'use-package))
+
 (setq inhibit-startup-message t)
 (menu-bar-mode nil)
-;;(tool-bar-mode nil)
+(tool-bar-mode nil)
 (setq make-backup-files nil)
 
-
-;; ------------------------------------------
-;; setup req-package
-;; ------------------------------------------
-(require 'req-package)
-
-;; (req-package el-get ;; prepare el-get (optional)
-;;   :force t ;; load package immediately, no dependency resolution
-;;   :config
-;;   (add-to-list 'el-get-recipe-path "~/.emacs.d/el-get/el-get/recipes"))
-;;  (el-get 'sync))
 
 ;; ------------------------------------------
 ;; font lock config
@@ -41,23 +35,22 @@
 ;; set line number
 ;; -------------------------------------------
 (global-linum-mode t)
-(setq linum-format "%d ")
+(unless window-system
+  (add-hook 'linum-before-numbering-hook
+	    (lambda ()
+	      (setq-local linum-format-fmt
+			  (let ((w (length (number-to-string
+					    (count-lines (point-min) (point-max))))))
+			    (concat "%" (number-to-string w) "d"))))))
 
-;; -------------------------------------------
-;; highlight current line
-;; -------------------------------------------
-;(global-hl-line-mode t)
-;; (set-face-attribute hl-line-face nil :underline t)
-;(set-face-foreground 'highlight nil)
-;(set-face-background 'highlight nil)
-;(set-face-underline-p 'highlight t)
+(defun linum-format-func (line)
+  (concat
+   (propertize (format linum-format-fmt line) 'face 'linum)
+   (propertize " " 'face 'mode-line)))
 
-;; ------------------------------------------
-;; enable gtags
-;; ------------------------------------------
-;; (gtags-mode 1)
-;;
- 
+(unless window-system
+  (setq linum-format 'linum-format-func))
+
 
 ;; ------------------------------------------
 ;; keyboad map config
@@ -72,29 +65,14 @@
 (global-set-key "\M-p" 'comment-region)
 (global-set-key "\M-\\" 'split-window-horizontally)
 (global-set-key "\M--" 'split-window-vertically)
-(global-set-key (kbd "M-s") 'gtags-find-rtag)
 (global-set-key [(f1)] 'other-window)
 (global-set-key [(f2)] 'delete-other-windows)
 
-
-;; add load path
-(add-to-list 'load-path "~/.elisp/")
-
-;;; install color theme
-;; (load-file "~/.elisp/color-theme.el")
-;; (require 'color-theme)
-;; (if window-system
-;; 		(color-theme-gnome2)
-;; 	(color-theme-dark-laptop))
 
 ;;; install ido
 (require 'ido)
 (ido-mode t)
 (setq ido-save-directory-list-file nil)
-
-;; line number 
-;; (require 'wb-line-number)
-;; (wb-line-number-toggle)
 
 ;; white space config
 (setq default-tab-width 2)              ;set default tab width
@@ -105,9 +83,8 @@
 ;; ------------------------------------------
 ;; company mode
 ;; ------------------------------------------
-(req-package company
+(use-package company
 	:ensure t
-	:force true
   :config
 	(add-hook 'after-init-hook 'global-company-mode)
 	(global-set-key (kbd "M-/") 'company-complete-common-or-cycle)
@@ -116,16 +93,55 @@
 ;; ------------------------------------------
 ;; flycheck mode
 ;; ------------------------------------------
-(req-package flycheck
-  :config
-	(global-flycheck-mode))
+(use-package flycheck
+	:ensure t
+  :init
+	(global-flycheck-mode t))
 
-
-(require 'ggtags)
+;; ------------------------------------------
+;; heml-gtags mode
+;; ------------------------------------------
+(require 'helm-gtags)
 (add-hook 'c-mode-common-hook
           (lambda ()
             (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
-              (ggtags-mode 1))))
+              (helm-gtags-mode 1))))
+;; key bindings
+(with-eval-after-load 'helm-gtags
+  (define-key helm-gtags-mode-map (kbd "M-.") 'helm-gtags-find-tag)
+  (define-key helm-gtags-mode-map (kbd "M-r") 'helm-gtags-find-rtag)
+  (define-key helm-gtags-mode-map (kbd "M-s") 'helm-gtags-find-symbol)
+  (define-key helm-gtags-mode-map (kbd "M-g M-p") 'helm-gtags-parse-file)
+  (define-key helm-gtags-mode-map (kbd "C-c <") 'helm-gtags-previous-history)
+  (define-key helm-gtags-mode-map (kbd "C-c >") 'helm-gtags-next-history)
+  (define-key helm-gtags-mode-map (kbd "M-,") 'helm-gtags-pop-stack))
+
+
+;; ------------------------------------------
+;; yasnippet mode
+;; ------------------------------------------
+(use-package yasnippet
+  :ensure t
+  :init
+  (yas-global-mode 1))
+(use-package yasnippet-snippets
+	:ensure t)
+
+(use-package clang-format
+	:ensure t)
+(use-package google-c-style
+	:ensure t)
+
+
+;; ------------------------------------------
+;; look and feel
+;; ------------------------------------------
+(use-package powerline
+	:ensure t)
+(use-package moe-theme
+  :ensure t)
+(moe-dark)
+(powerline-moe-theme)
 
 ;; C++ dev config - irony config
 (add-hook 'c++-mode-hook 'irony-mode)
@@ -173,9 +189,6 @@
 		("makefile*" . makefile-gmake-mode)
 		)auto-mode-alist))
 
-(require 'clang-format)
-(require 'google-c-style)
-
 ;; backup files settings
 (setq backup-directory-alist
 			`((".*" . ,temporary-file-directory)))
@@ -211,17 +224,13 @@
 
 (add-hook 'js-mode-hook 'my-js-mode-hook)
 
-;; jade mode
-(require 'sws-mode)
-(require 'jade-mode)
-(add-to-list 'auto-mode-alist '("\\.styl$" . sws-mode))
-(add-to-list 'auto-mode-alist '("\\.jade$" . jade-mode))
+
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(package-selected-packages (quote (ggtags rtags req-package company-shell company))))
+ '(package-selected-packages (quote (helm-gtags rtags company-shell company))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
