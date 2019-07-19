@@ -19,17 +19,8 @@
 (tool-bar-mode nil)
 (setq make-backup-files nil)
 
-
-;; ------------------------------------------
-;; font lock config
-;; ------------------------------------------
-(global-font-lock-mode t)
-(setq font-lock-maximum-decoration t)
-(show-paren-mode 1)
-(which-func-mode t)
-(transient-mark-mode t)
-(column-number-mode t)
-
+;;; reduce font lock overhead to open 'large' c/c++ files
+(setq font-lock-maximum-decoration 2)
 
 ;; -------------------------------------------
 ;; set line number
@@ -106,7 +97,10 @@
           (lambda ()
             (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
               (helm-gtags-mode 1))))
+
+;; ------------------------------------------
 ;; key bindings
+;; ------------------------------------------
 (with-eval-after-load 'helm-gtags
   (define-key helm-gtags-mode-map (kbd "M-.") 'helm-gtags-find-tag)
   (define-key helm-gtags-mode-map (kbd "M-r") 'helm-gtags-find-rtag)
@@ -143,13 +137,17 @@
 (moe-dark)
 (powerline-moe-theme)
 
+;; ------------------------------------------
 ;; C++ dev config - irony config
+;; ------------------------------------------
 (add-hook 'c++-mode-hook 'irony-mode)
 (add-hook 'c-mode-hook 'irony-mode)
 (add-hook 'objc-mode-hook 'irony-mode)
 (add-hook 'irony-mode-hook 'irony-cdb-autosetup-compile-options)
 
+;; ------------------------------------------
 ;; C++ dev config - google style config
+;; ------------------------------------------
 (add-hook 'c++-mode-hook 'google-set-c-style)
 (add-hook 'c-mode-common-hook 'google-make-newline-indent)
 
@@ -217,12 +215,12 @@
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
 ;; setup tern
-(eval-after-load 'tern
-	'(progn
-		 (require 'tern-auto-complete)
-		 (tern-ac-setup)))
+;; (eval-after-load 'tern
+;; 	'(progn
+;; 		 (require 'tern-auto-complete)
+;; 		 (tern-ac-setup)))
 
-(add-hook 'js-mode-hook 'my-js-mode-hook)
+;; (add-hook 'js-mode-hook 'my-js-mode-hook)
 
 
 (custom-set-variables
