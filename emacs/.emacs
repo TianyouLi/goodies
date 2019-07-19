@@ -15,8 +15,8 @@
   (package-install 'use-package))
 
 (setq inhibit-startup-message t)
-(menu-bar-mode nil)
-(tool-bar-mode nil)
+(menu-bar-mode -1)
+(setq tool-bar-mode nil)
 (setq make-backup-files nil)
 
 ;;; reduce font lock overhead to open 'large' c/c++ files
@@ -59,11 +59,14 @@
 (global-set-key [(f1)] 'other-window)
 (global-set-key [(f2)] 'delete-other-windows)
 
-
-;;; install ido
-(require 'ido)
-(ido-mode t)
-(setq ido-save-directory-list-file nil)
+;; ------------------------------------------
+;; install ido
+;; ------------------------------------------
+(use-package ido
+	:ensure t
+	:init
+	(ido-mode t)
+	(setq ido-save-directory-list-file nil))
 
 ;; white space config
 (setq default-tab-width 2)              ;set default tab width
@@ -92,11 +95,14 @@
 ;; ------------------------------------------
 ;; heml-gtags mode
 ;; ------------------------------------------
-(require 'helm-gtags)
-(add-hook 'c-mode-common-hook
-          (lambda ()
-            (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
-              (helm-gtags-mode 1))))
+(use-package helm-gtags
+	:ensure
+	:init
+	(add-hook
+	 'c-mode-common-hook
+	 (lambda ()
+		 (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
+			 (helm-gtags-mode 1)))))
 
 ;; ------------------------------------------
 ;; key bindings
@@ -213,15 +219,6 @@
 )
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
-
-;; setup tern
-;; (eval-after-load 'tern
-;; 	'(progn
-;; 		 (require 'tern-auto-complete)
-;; 		 (tern-ac-setup)))
-
-;; (add-hook 'js-mode-hook 'my-js-mode-hook)
-
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
