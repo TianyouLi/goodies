@@ -105,6 +105,41 @@
 			 (helm-gtags-mode 1)))))
 
 ;; ------------------------------------------
+;; rust mode
+;; ------------------------------------------
+(use-package racer
+	:ensure t
+	:config
+	(setq racer-cmd "~/.cargo/bin/racer")
+	(setq racer-rust-src-path "~/.rust/src/"))
+
+(use-package company-racer
+	:ensure t)
+
+(use-package flycheck-rust
+	:ensure t)
+
+(use-package rust-mode
+	:ensure t
+  :init
+	(add-hook 'rust-mode-hook
+     '(lambda ()
+     ;; Enable racer
+     (racer-activate)
+     ;; Hook in racer with eldoc to provide documentation
+     (racer-turn-on-eldoc)
+     ;; Use flycheck-rust in rust-mode
+     (add-hook 'flycheck-mode-hook #'flycheck-rust-setup)
+     ;; Use company-racer in rust mode
+     (set (make-local-variable 'company-backends) '(company-racer))
+     ;; Key binding to jump to method definition
+     (local-set-key (kbd "M-.") #'racer-find-definition)
+     ;; Key binding to auto complete and indent
+     (local-set-key (kbd "TAB") #'racer-complete-or-indent))))
+
+(add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode))
+
+;; ------------------------------------------
 ;; key bindings
 ;; ------------------------------------------
 (with-eval-after-load 'helm-gtags
@@ -225,7 +260,9 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(package-selected-packages (quote (helm-gtags rtags company-shell company))))
+ '(package-selected-packages
+	 (quote
+		(flycheck-rust helm-gtags rtags company-shell company))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
