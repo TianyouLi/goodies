@@ -110,8 +110,8 @@
 (use-package racer
 	:ensure t
 	:config
-	(setq racer-cmd "~/.cargo/bin/racer")
-	(setq racer-rust-src-path "~/.rust/src/"))
+	(setq racer-cmd "/home/tli7/.cargo/bin/racer")
+	(setq racer-rust-src-path "/home/tli7/.rust/src/"))
 
 (use-package company-racer
 	:ensure t)
@@ -165,6 +165,13 @@
 (use-package clang-format
 	:ensure t)
 (use-package google-c-style
+	:ensure t)
+
+
+;; ------------------------------------------
+;; markdown mode
+;; ------------------------------------------
+(use-package markdown-mode
 	:ensure t)
 
 
