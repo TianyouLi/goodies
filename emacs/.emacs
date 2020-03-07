@@ -14,6 +14,9 @@
   (package-refresh-contents)
   (package-install 'use-package))
 
+;; set on mac
+(setq mac-command-key-is-meta t)
+
 (setq inhibit-startup-message t)
 (menu-bar-mode -1)
 (setq tool-bar-mode nil)
@@ -21,6 +24,7 @@
 
 ;;; reduce font lock overhead to open 'large' c/c++ files
 (setq font-lock-maximum-decoration 2)
+
 
 ;; -------------------------------------------
 ;; set line number
@@ -268,8 +272,8 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-selected-packages
-	 (quote
-		(flycheck-rust helm-gtags rtags company-shell company))))
+   (quote
+    (flycheck-rust helm-gtags rtags company-shell company))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
