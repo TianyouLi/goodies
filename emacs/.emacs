@@ -203,6 +203,32 @@
 (add-hook 'c++-mode-hook 'google-set-c-style)
 (add-hook 'c-mode-common-hook 'google-make-newline-indent)
 
+;;; javascript
+
+(use-package js2-mode
+  :ensure t
+  :init
+  (setq js-basic-indent 2)
+  (setq-default js2-basic-indent 2
+                js2-basic-offset 2
+                js2-auto-indent-p t
+                js2-cleanup-whitespace t
+                js2-enter-indents-newline t
+                js2-indent-on-enter-key t
+                js2-global-externs (list "window" "module" "require" "buster"
+					 "sinon" "assert" "refute" "setTimeout"
+					 "clearTimeout" "setInterval" "clearInterval"
+					 "location" "__dirname" "console" "JSON" "jQuery" "$"))
+  (add-hook 'js2-mode-hook
+            (lambda ()
+              (push '("function" . ?ƒ) prettify-symbols-alist)))
+
+  (add-to-list 'auto-mode-alist '("\\.js$" . js2-mode)))
+
+(use-package color-identifiers-mode
+    :ensure t
+    :init
+    (add-hook 'js2-mode-hook 'color-identifiers-mode))
 
 ;; gdb config
 (add-hook
@@ -273,10 +299,59 @@
  ;; If there is more than one, they won't work right.
  '(package-selected-packages
    (quote
-    (flycheck-rust helm-gtags rtags company-shell company))))
+    (treemacs-persp treemacs-magit treemacs-icons-dired treemacs-projectile treemacs-evil treemacs flycheck-rust helm-gtags rtags company-shell company))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  )
+
+;; ------------------------------------------
+;; treeview
+;; ------------------------------------------
+
+;; (use-package treemacs
+;;   :ensure t
+;;   :defer t
+;;   :init
+;;   (with-eval-after-load 'winum
+;;     (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
+;;   :config
+;;   (progn
+;;     (treemacs-follow-mode t)
+;;     (treemacs-filewatch-mode t)
+;;     (treemacs-fringe-indicator-mode t)
+;;     (pcase (cons (not (null (executable-find "git")))
+;; 		 (not (null treemacs-python-executable)))
+;;       (`(t . t)
+;;        (treemacs-git-mode 'deferred))
+;;       (`(t . _)
+;;        (treemacs-git-mode 'simple))))
+;;   :bind
+;;   (:map global-map
+;; 	("M-0"       . treemacs-select-window)
+;; 	("C-x t"     . treemacs)))
+
+;; (use-package treemacs-evil
+;;   :after treemacs evil
+;;   :ensure t)
+
+;; (use-package treemacs-projectile
+;;   :after treemacs projectile
+;;   :ensure t)
+
+;; (use-package treemacs-icons-dired
+;;   :after treemacs dired
+;;   :ensure t
+;;   :config (treemacs-icons-dired-mode))
+
+;; (use-package treemacs-magit
+;;   :after treemacs magit
+;;   :ensure t)
+
+;; (use-package treemacs-persp
+;;   :after treemacs persp-mode
+;;   :ensure t
+;;   :config (treemacs-set-scope-type 'Perspectives))
+

@@ -1,12 +1,19 @@
 export PATH="/usr/local/sbin:$PATH"
-export NVM_DIR=~/.nvm
-source $(brew --prefix nvm)/nvm.sh
 export CLICOLOR=1
 
-export GIT_PS1_SHOWCOLORHINTS=true
+## supress mac zsh
+export BASH_SILENCE_DEPRECATION_WARNING=1
 
+## node version manager
+export NVM_DIR=~/.nvm
+source $(brew --prefix nvm)/nvm.sh
+
+## git completion and prompt
+export GIT_PS1_SHOWCOLORHINTS=true
 for f in ~/.git_env/*; do
    . $f
 done
 
+## bash ps1
 PS1="\n\[\033[1;37m\]\342\224\214(\[\033[01;34m\]\u\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\w\$(__git_ps1)\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\$(ls -1 | wc -l | sed 's: ::g') files, \$(ls -lah | grep -m 1 total | sed 's/total //')b\[\033[1;37m\])\n\342\224\224\342\206\222> \[\033[0m\]"
+
