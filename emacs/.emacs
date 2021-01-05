@@ -67,10 +67,10 @@
 ;; install ido
 ;; ------------------------------------------
 (use-package ido
-	:ensure t
-	:init
-	(ido-mode t)
-	(setq ido-save-directory-list-file nil))
+  :ensure t
+  :init
+  (ido-mode t)
+  (setq ido-save-directory-list-file nil))
 
 ;; white space config
 (setq default-tab-width 2)              ;set default tab width
@@ -82,64 +82,64 @@
 ;; company mode
 ;; ------------------------------------------
 (use-package company
-	:ensure t
+  :ensure t
   :config
-	(add-hook 'after-init-hook 'global-company-mode)
-	(global-set-key (kbd "M-/") 'company-complete-common-or-cycle)
-	(setq company-idle-delay 0))
+  (add-hook 'after-init-hook 'global-company-mode)
+  (global-set-key (kbd "M-/") 'company-complete-common-or-cycle)
+  (setq company-idle-delay 0))
 
 ;; ------------------------------------------
 ;; flycheck mode
 ;; ------------------------------------------
 (use-package flycheck
-	:ensure t
+  :ensure t
   :init
-	(global-flycheck-mode t))
+  (global-flycheck-mode t))
 
 ;; ------------------------------------------
 ;; heml-gtags mode
 ;; ------------------------------------------
 (use-package helm-gtags
-	:ensure
-	:init
-	(add-hook
-	 'c-mode-common-hook
-	 (lambda ()
-		 (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
-			 (helm-gtags-mode 1)))))
+  :ensure
+  :init
+  (add-hook
+   'c-mode-common-hook
+   (lambda ()
+     (when (derived-mode-p 'c-mode 'c++-mode 'java-mode 'asm-mode)
+       (helm-gtags-mode 1)))))
 
 ;; ------------------------------------------
 ;; rust mode
 ;; ------------------------------------------
 (use-package racer
-	:ensure t
-	:config
-	(setq racer-cmd "/home/tli7/.cargo/bin/racer")
-	(setq racer-rust-src-path "/home/tli7/.rust/src/"))
+  :ensure t
+  :config
+  (setq racer-cmd "/home/tli7/.cargo/bin/racer")
+  (setq racer-rust-src-path "/home/tli7/.rust/src/"))
 
 (use-package company-racer
-	:ensure t)
+  :ensure t)
 
 (use-package flycheck-rust
-	:ensure t)
+  :ensure t)
 
 (use-package rust-mode
-	:ensure t
+  :ensure t
   :init
-	(add-hook 'rust-mode-hook
-     '(lambda ()
-     ;; Enable racer
-     (racer-activate)
-     ;; Hook in racer with eldoc to provide documentation
-     (racer-turn-on-eldoc)
-     ;; Use flycheck-rust in rust-mode
-     (add-hook 'flycheck-mode-hook #'flycheck-rust-setup)
-     ;; Use company-racer in rust mode
-     (set (make-local-variable 'company-backends) '(company-racer))
-     ;; Key binding to jump to method definition
-     (local-set-key (kbd "M-.") #'racer-find-definition)
-     ;; Key binding to auto complete and indent
-     (local-set-key (kbd "TAB") #'racer-complete-or-indent))))
+  (add-hook 'rust-mode-hook
+	    '(lambda ()
+	       ;; Enable racer
+	       (racer-activate)
+	       ;; Hook in racer with eldoc to provide documentation
+	       (racer-turn-on-eldoc)
+	       ;; Use flycheck-rust in rust-mode
+	       (add-hook 'flycheck-mode-hook #'flycheck-rust-setup)
+	       ;; Use company-racer in rust mode
+	       (set (make-local-variable 'company-backends) '(company-racer))
+	       ;; Key binding to jump to method definition
+	       (local-set-key (kbd "M-.") #'racer-find-definition)
+	       ;; Key binding to auto complete and indent
+	       (local-set-key (kbd "TAB") #'racer-complete-or-indent))))
 
 (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode))
 
@@ -164,26 +164,26 @@
   :init
   (yas-global-mode 1))
 (use-package yasnippet-snippets
-	:ensure t)
+  :ensure t)
 
 (use-package clang-format
-	:ensure t)
+  :ensure t)
 (use-package google-c-style
-	:ensure t)
+  :ensure t)
 
 
 ;; ------------------------------------------
 ;; markdown mode
 ;; ------------------------------------------
 (use-package markdown-mode
-	:ensure t)
+  :ensure t)
 
 
 ;; ------------------------------------------
 ;; look and feel
 ;; ------------------------------------------
 (use-package powerline
-	:ensure t)
+  :ensure t)
 (use-package moe-theme
   :ensure t)
 (moe-dark)
@@ -208,17 +208,15 @@
 (use-package js2-mode
   :ensure t
   :init
-  (setq js-basic-indent 2)
-  (setq-default js2-basic-indent 2
-                js2-basic-offset 2
-                js2-auto-indent-p t
-                js2-cleanup-whitespace t
-                js2-enter-indents-newline t
-                js2-indent-on-enter-key t
-                js2-global-externs (list "window" "module" "require" "buster"
-					 "sinon" "assert" "refute" "setTimeout"
-					 "clearTimeout" "setInterval" "clearInterval"
-					 "location" "__dirname" "console" "JSON" "jQuery" "$"))
+  (setq js-indent-level 2
+	js2-auto-indent-p t
+	js2-cleanup-whitespace t
+	js2-enter-indents-newline t
+	js2-indent-on-enter-key t
+	js2-global-externs (list "window" "module" "require" "buster"
+				 "sinon" "assert" "refute" "setTimeout"
+				 "clearTimeout" "setInterval" "clearInterval"
+				 "location" "__dirname" "console" "JSON" "jQuery" "$"))
   (add-hook 'js2-mode-hook
             (lambda ()
               (push '("function" . ?ƒ) prettify-symbols-alist)))
@@ -226,69 +224,69 @@
   (add-to-list 'auto-mode-alist '("\\.js$" . js2-mode)))
 
 (use-package color-identifiers-mode
-    :ensure t
-    :init
-    (add-hook 'js2-mode-hook 'color-identifiers-mode))
+  :ensure t
+  :init
+  (add-hook 'js2-mode-hook 'color-identifiers-mode))
 
 ;; gdb config
 (add-hook
  'gud-mode-hook
  '(lambda ()
-		(local-set-key
-		 [home] ; move to beginning of line, after prompt
-		 'comint-bol)
-		(local-set-key
-		 [up] ; cycle backward through command history
-		 '(lambda () (interactive)
-				(if (comint-after-pmark-p)
-						(comint-previous-input 1)
-					(previous-line 1))))
-		(local-set-key
-		 [down] ; cycle forward through command history
-		 '(lambda () (interactive)
-				(if (comint-after-pmark-p)
-						(comint-next-input 1)
-					(forward-line 1))))
-		))
+    (local-set-key
+     [home] ; move to beginning of line, after prompt
+     'comint-bol)
+    (local-set-key
+     [up] ; cycle backward through command history
+     '(lambda () (interactive)
+	(if (comint-after-pmark-p)
+	    (comint-previous-input 1)
+	  (previous-line 1))))
+    (local-set-key
+     [down] ; cycle forward through command history
+     '(lambda () (interactive)
+	(if (comint-after-pmark-p)
+	    (comint-next-input 1)
+	  (forward-line 1))))
+    ))
 
 ;; alias list
 (setq
  auto-mode-alist
  (append
-	'(
-		("\\.sh$" . sh-mode)
-		("\\.h$" . c++-mode)
-		("\\.hh$". c++-mode)
-		("\\.csh$" . csh-mode)
-		("\\.py$" . python-mode)
-		("Makefile*" . makefile-gmake-mode)
-		("makefile*" . makefile-gmake-mode)
-		)auto-mode-alist))
+  '(
+    ("\\.sh$" . sh-mode)
+    ("\\.h$" . c++-mode)
+    ("\\.hh$". c++-mode)
+    ("\\.csh$" . csh-mode)
+    ("\\.py$" . python-mode)
+    ("Makefile*" . makefile-gmake-mode)
+    ("makefile*" . makefile-gmake-mode)
+    )auto-mode-alist))
 
 ;; backup files settings
 (setq backup-directory-alist
-			`((".*" . ,temporary-file-directory)))
+      `((".*" . ,temporary-file-directory)))
 (setq auto-save-file-name-transforms
-			`((".*" ,temporary-file-directory t)))
+      `((".*" ,temporary-file-directory t)))
 
 ;; python hook
 (defun my-python-mode-hook()
-	(setq indent-tabs-mode nil)
-	(setq tab-width 2)
-	(setq python-indent 2)
-	(setq-default tab-width 2)
-	(setq-default indent-tabs-mode nil)
-)
+  (setq indent-tabs-mode nil)
+  (setq tab-width 2)
+  (setq python-indent 2)
+  (setq-default tab-width 2)
+  (setq-default indent-tabs-mode nil)
+  )
 
 (add-hook 'python-mode-hook 'my-python-mode-hook)
 
 ;; xml hook
 (defun my-xml-mode-hook()
-	(setq indent-tabs-mode nil)
-	(setq tab-width 2)
-	(setq-default tab-width 2)
-	(setq-default indent-tabs-mode nil)
-)
+  (setq indent-tabs-mode nil)
+  (setq tab-width 2)
+  (setq-default tab-width 2)
+  (setq-default indent-tabs-mode nil)
+  )
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
