@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT=$(greadlink -f "$0")
+SCRIPT=$(readlink -f "$0")
 BASEDIR=$(dirname $SCRIPT)
 
 DOTEMACS=$BASEDIR/emacs/.emacs

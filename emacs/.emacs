@@ -1,18 +1,29 @@
 ;;; Emacs is not a package manager, and here we load its package manager!
+ 
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")
+ '(package-selected-packages
+   (quote
+    (color-identifiers-mode js2-mode treemacs-persp treemacs-magit treemacs-icons-dired treemacs-projectile treemacs-evil treemacs flycheck-rust helm-gtags rtags company-shell company))))
+(setq url-proxy-services
+      '(("no_proxy" . "^\\(localhost\\|10.*\\)")
+        ("http" . "child-prc.intel.com:913")
+        ("https" . "child-prc.intel.com:913")))
+
+(setq package-archives '(("gnu"   . "http://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+			 ("melpa" . "http://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+
 (require 'package)
-(dolist (source '(("marmalade" . "http://marmalade-repo.org/packages/")
-		  ("elpa" . "http://tromey.com/elpa/")
-		  ;; TODO: Maybe, use this after emacs24 is released
-		  ;; (development versions of packages)
-		  ("melpa" . "http://melpa.milkbox.net/packages/")
-		  ))
-  (add-to-list 'package-archives source t))
 (package-initialize)
 
 ;; Bootstrap `use-package'
 (unless (package-installed-p 'use-package)
-  (package-refresh-contents)
-  (package-install 'use-package))
+ (package-refresh-contents)
+ (package-install 'use-package))
 
 ;; set on mac
 (setq mac-command-key-is-meta t)
@@ -290,14 +301,7 @@
 
 (add-hook 'nxml-mode-hook 'my-xml-mode-hook)
 
-(custom-set-variables
- ;; custom-set-variables was added by Custom.
- ;; If you edit it by hand, you could mess it up, so be careful.
- ;; Your init file should contain only one such instance.
- ;; If there is more than one, they won't work right.
- '(package-selected-packages
-   (quote
-    (treemacs-persp treemacs-magit treemacs-icons-dired treemacs-projectile treemacs-evil treemacs flycheck-rust helm-gtags rtags company-shell company))))
+
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
