@@ -14,3 +14,8 @@ ln -s -f $DOTELISP ~/.elisp
 ln -s -f $DOTTMUX ~/.tmux.conf
 ln -s -f $DOTALIASES ~/.bash_aliases
 ln -s -f $DOTGITENV ~/.git_env
+
+# set tpm
+mkdir -p ~/.tmux/plugins
+ln -s -f ${BASEDIR}/tmux/tpm ~/.tmux/plugins/tpm
+
