@@ -17,7 +17,7 @@ mkdir -p ${FOLDER}
 shift
 
 CMD=$(printf " %q" "${@}")
-SURFIX=`echo ${CMD// /_}`
+SURFIX=`echo ${CMD//[ \/]/_}`
 
 echo "Executing ${CMD}"
 
