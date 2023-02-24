@@ -8,3 +8,5 @@ alias mux='pgrep -vx tmux > /dev/null && \
 alias sudo='sudo -E'
 
 alias
+
+export TERM="screen-256color"
