@@ -23,3 +23,8 @@ mkdir -p ~/.tmux/plugins
 rm -f ~/.tmux/plugins/tpm 
 ln -s -f ${BASEDIR}/tmux/tpm ~/.tmux/plugins/tpm
 
+# kenrel tools path
+KERNEL_TOOLS=${BASEDIR}/kernel
+echo "# kernel tools path" >> ~/.bashrc 
+echo "export PATH=${PATH}:${KERNEL_TOOLS}" >> ~/.bashrc 
+
