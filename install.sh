@@ -26,5 +26,10 @@ ln -s -f ${BASEDIR}/tmux/tpm ~/.tmux/plugins/tpm
 # kenrel tools path
 KERNEL_TOOLS=${BASEDIR}/kernel
 echo "# kernel tools path" >> ~/.bashrc 
-echo "export PATH=${PATH}:${KERNEL_TOOLS}" >> ~/.bashrc 
+echo "export PATH=${PATH}:${KERNEL_TOOLS}" >> ~/.bashrc
+
+# clickhouse tools path
+CLICKHOUSE_TOOLS=${BASEDIR}/clickhouse/scripts
+echo "# clickhouse tools path" >> ~/.bashrc
+echo "export PATH=${PATH}:${CLICKHOUSE_TOOLS}" >> ~/.bashrc
 
