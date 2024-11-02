@@ -70,13 +70,9 @@ if [ ! -f "${DB_DIR}/hits_v1.tsv" ]; then
 fi
 
 
-
 SQL_FILE=$SCRIPT_DIR/sql/test_db_setup.sql
-
 echo "Create tables with command ${CK_BIN} --port $PORT --multiquery < $SQL_FILE"
 ${CK_BIN} --port $PORT --multiquery < $SQL_FILE
-
-
 
 echo "Import ${CK_BIN} --port $PORT --max_insert_block_size 100000 --query \"INSERT INTO test.hits FORMAT TSV\" < ${DB_DIR}/hits_v1.tsv"
 ${CK_BIN} --port $PORT --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < ${DB_DIR}/hits_v1.tsv
@@ -87,4 +83,11 @@ ${CK_BIN} --port $PORT --max_insert_block_size 100000 --query "INSERT INTO test.
 echo "Import ${CK_BIN} --port $PORT --max_insert_block_size 100000 --query \"INSERT INTO hits_100m_single FORMAT TSV\" < ${DB_DIR}/hits_100m_obfuscated_v1.tsv"
 ${CK_BIN} --port $PORT --max_insert_block_size 100000 --query "INSERT INTO hits_100m_single FORMAT TSV" < ${DB_DIR}/hits_100m_obfuscated_v1.tsv
 
+
+SQL_FILE=$SCRIPT_DIR/../benchmarks/clickbench/table_setup.sql
+echo "Create tables with command ${CK_BIN} --port $PORT --multiquery < $SQL_FILE"
+${CK_BIN} --port $PORT --multiquery < $SQL_FILE
+
+echo "Import ${CK_BIN} --port $PORT --time --query \"INSERT INTO hits FORMAT TSV\" < ${DB_DIR}/hits.tsv"
+${CK_BIN} --port $PORT --time --query "INSERT INTO hits FORMAT TSV" < ${DB_DIR}/hits.tsv
 

@@ -47,4 +47,11 @@ if [ ! -f "hits_v1.tsv" ]; then
         xz -v -d hits_100m_obfuscated_v1.tsv.xz
 fi
 
+if [ ! -f "hits.tsv" ]; then
+	echo "Download test database..."
+    wget --continue 'https://datasets.clickhouse.com/hits_compatible/hits.tsv.gz'
+    gzip -d hits.tsv.gz
+fi
+
+
 echo "Database downloaded."
