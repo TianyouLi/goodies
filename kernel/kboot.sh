@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 kernels=($(ls -f /boot/vmlinuz-* | cut -c 15-))
 kernels+=("Quit")
