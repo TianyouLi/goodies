@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT * FROM hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10;]]></query>
+</test>

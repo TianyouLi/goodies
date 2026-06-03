@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT UserID, extract(minute FROM EventTime) AS m, SearchPhrase, COUNT(*) FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY COUNT(*) DESC LIMIT 10;]]></query>
+</test>

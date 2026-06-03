@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT 1, URL, COUNT(*) AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10;]]></query>
+</test>

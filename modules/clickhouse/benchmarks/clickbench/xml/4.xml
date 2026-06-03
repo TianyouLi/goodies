@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT AVG(UserID) FROM hits;]]></query>
+</test>
