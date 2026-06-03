@@ -1,0 +1,12 @@
+{
+  "model": "us.anthropic.claude-opus-4-6-v1",
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false,
+    "clangd-lsp@claude-plugins-official": true
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "statusLine": {
+    "type": "command",
+    "command": "branch=$(git branch --show-current 2>/dev/null || echo 'no-git'); pr=$(gh pr list --head \"$branch\" --json number --jq '.[0].number // empty' 2>/dev/null); if [ -n \"$pr\" ]; then echo \"$branch (PR #$pr)\"; else echo \"$branch\"; fi"
+  }
+}
