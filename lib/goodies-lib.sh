@@ -8,15 +8,15 @@ GOODIES_ROOT="${GOODIES_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # --- Logging ---
 
 log_info() {
-    echo "[INFO] $*"
+    printf '[INFO] %s\n' "$*"
 }
 
 log_warn() {
-    echo "[WARN] $*" >&2
+    printf '[WARN] %s\n' "$*" >&2
 }
 
 log_error() {
-    echo "[ERROR] $*" >&2
+    printf '[ERROR] %s\n' "$*" >&2
 }
 
 # --- Platform detection ---
@@ -38,16 +38,24 @@ safe_link() {
         log_warn "$dst exists as a regular file, skipping (back it up and re-run to link)"
         return 1
     else
-        ln -s -f "$src" "$dst"
-        log_info "Linked $dst -> $src"
+        if ln -s -f "$src" "$dst"; then
+            log_info "Linked $dst -> $src"
+        else
+            log_error "Failed to link $dst -> $src"
+            return 1
+        fi
     fi
 }
 
 ensure_dir() {
     local dir="$1"
     if [ ! -d "$dir" ]; then
-        mkdir -p "$dir"
-        log_info "Created directory $dir"
+        if mkdir -p "$dir"; then
+            log_info "Created directory $dir"
+        else
+            log_error "Failed to create directory $dir"
+            return 1
+        fi
     fi
 }
 
@@ -58,8 +66,12 @@ path_append() {
     local entry="$2"
     local line="export PATH=\${PATH}:${entry}"
     if ! grep -qxF "$line" "$bashrc" 2>/dev/null; then
-        echo "$line" >> "$bashrc"
-        log_info "Added PATH entry: $entry"
+        if echo "$line" >> "$bashrc"; then
+            log_info "Added PATH entry: $entry"
+        else
+            log_error "Failed to append PATH entry to $bashrc"
+            return 1
+        fi
     fi
 }
 

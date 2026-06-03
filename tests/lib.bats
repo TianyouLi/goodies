@@ -88,18 +88,24 @@ teardown() {
 
 # --- platform detection tests ---
 
-@test "is_linux or is_macos returns true on current platform" {
-    if [[ "$(uname -s)" == "Linux" ]]; then
-        run is_linux
-        assert_success
-        run is_macos
-        assert_failure
-    else
-        run is_macos
-        assert_success
-        run is_linux
-        assert_failure
+@test "is_linux returns true on Linux" {
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        skip "not running on Linux"
     fi
+    run is_linux
+    assert_success
+    run is_macos
+    assert_failure
+}
+
+@test "is_macos returns true on macOS" {
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        skip "not running on macOS"
+    fi
+    run is_macos
+    assert_success
+    run is_linux
+    assert_failure
 }
 
 # --- require_cmd tests ---

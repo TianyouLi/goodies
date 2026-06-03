@@ -12,11 +12,14 @@ export GOODIES_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
 
 setup_test_home() {
     export ORIG_HOME="$HOME"
-    export HOME="$BATS_TMPDIR/home_$$_$BATS_TEST_NUMBER"
-    mkdir -p "$HOME"
+    TEST_HOME="$BATS_TMPDIR/home_$$_$BATS_TEST_NUMBER"
+    mkdir -p "$TEST_HOME"
+    export HOME="$TEST_HOME"
 }
 
 teardown_test_home() {
-    rm -rf "$HOME"
     export HOME="$ORIG_HOME"
+    if [ -n "$TEST_HOME" ] && [ -d "$TEST_HOME" ] && [[ "$TEST_HOME" == "$BATS_TMPDIR"/* ]]; then
+        rm -rf "$TEST_HOME"
+    fi
 }
