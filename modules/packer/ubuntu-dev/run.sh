@@ -3,6 +3,6 @@
 # launch privoxy
 /etc/init.d/privoxy start
 
-# last: launch sshd
+# last: lauch sshd
 /usr/sbin/sshd -D
 

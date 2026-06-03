@@ -1,28 +1,23 @@
 #!/bin/bash
 
-function runcmd() {
-		echo $1
-		eval $1
-		echo "$1 ... done!"
-}
+export DEBIAN_FRONTEND=noninteractive
+export http_proxy="http://cdai2-linux64-2.sh.intel.com:8123"
+export https_proxy=${http_proxy}
+export aptool="apt-get -q -y"
 
-# now setup some environment, first let's change privoxy settings
-echo "forward-socks5 / proxy.jf.intel.com:1080 ." >> /etc/privoxy/config
-echo "listen-address 127.0.0.1:8118" >> /etc/privoxy/config
-/etc/init.d/privoxy restart
+# update to latest version
+${aptool} update
 
-# then change subversion config
-mkdir -p /root/.subversion
-echo "[global]
-http-proxy-host = localhost
-http-proxy-port = 8118
-http-proxy-exceptions = \*.intel.com" >> /root/.subversion/servers
 
-# then change the apt proxy
-echo "Acquire::http::proxy \"http://proxy01.cd.intel.com:911\";
-Acquire::https::proxy \"http://proxy01.cd.intel.com:911\";
-Acquire::ftp::proxy \"http://proxy01.cd.intel.com:911\";
-Acquire::socks::proxy \"socks://proxy.jf.intel.com:1080/\";" >> /etc/apt/apt.conf
+# install nginx
+${aptool} install nginx-full openssh-server openssh-client emacs net-tools sockstat tmux iputils-ping make sudo git
+
+
+# change root password
+echo 'root:123456' | chpasswd
+
+# create directory for sshd
+mkdir -p /var/run/sshd
 
 # chmod for run.sh
 chmod +x /etc/init.d/run.sh
@@ -33,15 +28,13 @@ adduser --disabled-password --gecos ""  lity
 # change user passwd
 echo 'lity:123456' | chpasswd
 
-
 # modify sudoers file
 echo "Defaults        env_keep = \"http_proxy ftp_proxy all_proxy https_proxy no_proxy socks_proxy\"
 # Allow krom to have root access for ChromeOS build
 lity ALL=(ALL) NOPASSWD: ALL" | tee -a /etc/sudoers
 
-
 ## append environment vars
-echo 'export http_proxy="http://localhost:8118"
+echo 'export http_proxy="http://cdai2-linux64-2.sh.intel.com:8123"
 export socks_proxy="proxy.jf.intel.com:1080"
 
 export all_proxy=${socks_proxy}
@@ -64,8 +57,22 @@ if [ $? -eq 0 ]; then
 else
     connect -S proxy-socks.jf.intel.com:1080 $@
 fi' | tee -a /usr/local/bin/socks-git
-chmod +x /usr/local/bin/socks-git
 
+
+## setup nginx
+echo 'server {
+  listen 8080 default_server;
+  listen [::]:8080 default_server ipv6only=on;
+
+  root /javascript-benchmarks;
+
+  location / {
+    autoindex  on;
+    try_files $uri $uri/ =404;
+  }
+}' | tee -a /etc/nginx/sites-available/javascript-benchmarks
+ln -s /etc/nginx/sites-available/javascript-benchmarks /etc/nginx/sites-enabled/javascript-benchmarks
+git clone https://github.com/TianyouLi/javascript-benchmarks.git /javascript-benchmarks
 
 echo 'PS1=lity@lity-ubuntu-dev
 source /etc/bash.bashrc
@@ -87,5 +94,4 @@ ln -s ~/goodies/emacs/.emacs ~/.emacs' | tee /usr/local/bin/lity-ubuntu-dev-env.
 
 ##swith to user lity
 su -l lity -c "bash /usr/local/bin/lity-ubuntu-dev-env.sh"
-
 

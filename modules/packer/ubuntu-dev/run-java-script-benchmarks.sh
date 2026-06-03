@@ -3,6 +3,6 @@
 # launch nginx
 /etc/init.d/nginx restart
 
-# last: launch sshd
+# last: lauch sshd
 /usr/sbin/sshd -D
 

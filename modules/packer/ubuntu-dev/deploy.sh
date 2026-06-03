@@ -13,10 +13,10 @@ echo "listen-address 127.0.0.1:8118" >> /etc/privoxy/config
 
 # then change subversion config
 mkdir -p /root/.subversion
-echo "[global]
-http-proxy-host = localhost
-http-proxy-port = 8118
-http-proxy-exceptions = \*.intel.com" >> /root/.subversion/servers
+echo " [global] 
+ http-proxy-host = localhost 
+ http-proxy-port = 8118 
+ http-proxy-exceptions = \*.intel.com" >> /root/.subversion/servers
 
 # then change the apt proxy
 echo "Acquire::http::proxy \"http://proxy01.cd.intel.com:911\";
@@ -64,7 +64,6 @@ if [ $? -eq 0 ]; then
 else
     connect -S proxy-socks.jf.intel.com:1080 $@
 fi' | tee -a /usr/local/bin/socks-git
-chmod +x /usr/local/bin/socks-git
 
 
 echo 'PS1=lity@lity-ubuntu-dev

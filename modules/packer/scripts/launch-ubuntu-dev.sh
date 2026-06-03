@@ -6,8 +6,9 @@
 #
 #  1. current stable image: tli7-sto.sh.intel.com:5000/costa-dev:0.6
 #  2. port mapping:
-#     ssh:                host 7022  -> container 22
-#     vnc:                host 40389 -> container 3389
+#     ssh:                host 8022  -> container 22
+#     vnc:                host 50389 -> container 3389
+#     telemetry rest api: host 50808 -> container 8080
 #######################################################################
 ## Above information will update according to any changes of system!!!
 #######################################################################

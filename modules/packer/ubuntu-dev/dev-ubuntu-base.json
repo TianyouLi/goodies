@@ -2,29 +2,30 @@
 		"builders": [
 				{
 						"type": "docker",
-						"image": "ubuntu:14.04",
-						"export_path": "javascript-benchmarks.tar"
+						"image": "ubuntu:12.04",
+						"export_path": "ubuntu-dev.tar"
 				}
 		],
 
 		"provisioners": [
 				{
 						"type": "file",
-						"source": "run-java-script-benchmarks.sh",
-						"destination": "/etc/init.d/run-java-script-benchmarks.sh"
+						"source": "run.sh",
+						"destination": "/etc/init.d/run.sh"
 				},
 				{
 						"type": "shell",
 						"scripts": [
-								"javascript-benchmark-install.sh"
+								"install.sh"
 						]
 				}
 		],
+		
 		"post-processors": [
 				[
 						{
 								"type": "docker-import",
-								"repository": "lity/javascript-benchmarks",
+								"repository": "lity/ubuntu12-dev",
 								"tag": "0.1"
 						},
 						"docker-push"

@@ -1,5 +1,5 @@
 #!/bin/bash
-ID=`sudo docker ps -a --format '{{.ID}}' --filter name=lity-chrome-dev`
+ID=`sudo docker ps -a | grep lity-chrome-dev | cut -d " " -f 1`
 
 if [ -z "$ID" ]; then
 		exit 0

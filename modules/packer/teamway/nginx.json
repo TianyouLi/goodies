@@ -1,0 +1,33 @@
+{
+		"builders": [
+				{
+						"type": "docker",
+						"image": "lity/ubuntu14-dev:0.2",
+						"export_path": "nginx.tar"
+				}
+		],
+
+		"provisioners": [
+				{
+						"type": "file",
+						"source": "./scripts",
+						"destination": "/tmp"
+				},
+				{
+						"type": "shell",
+						"inline": ["cd /tmp/scripts/build/nginx/", "/tmp/scripts/build/nginx/nginx.sh"]
+				}
+		],
+		
+		"post-processors": [
+				[
+						{
+								"type": "docker-import",
+								"repository": "lity/nginx",
+								"tag": "0.1"
+						},
+						"docker-push"
+				]
+		]
+}
+
