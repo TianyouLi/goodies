@@ -8,7 +8,7 @@ Personal dotfiles and tooling repository organized into self-contained modules. 
 
 ## Workflow
 
-All changes must go through a feature branch + PR with Copilot review before merging to master. Never push directly to master. Use `/watch-pr` to monitor Copilot review results and fix findings automatically.
+All changes must go through a feature branch + PR with Copilot review before merging to master. Never push directly to master. Use `/watch-pr` to monitor Copilot review results and fix findings automatically. Only merge after `/watch-pr` reports LGTM (all findings addressed).
 
 ## Repository Structure
 
