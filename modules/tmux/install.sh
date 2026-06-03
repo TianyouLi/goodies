@@ -7,3 +7,4 @@ safe_link "${BASEDIR}/.tmux.conf" ~/.tmux.conf
 
 ensure_dir ~/.tmux/plugins
 safe_link "${BASEDIR}/tpm" ~/.tmux/plugins/tpm
+true

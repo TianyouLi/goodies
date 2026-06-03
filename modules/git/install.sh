@@ -11,3 +11,4 @@ safe_link "${BASEDIR}/env/git-prompt.sh" ~/.git_env/git-prompt.sh
 # Link git-clang-format to ~/.local/bin
 ensure_dir ~/.local/bin
 safe_link "${BASEDIR}/git-clang-format" ~/.local/bin/git-clang-format
+true
