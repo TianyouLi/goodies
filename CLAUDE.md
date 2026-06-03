@@ -6,9 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Personal dotfiles and tooling repository organized into self-contained modules. Each module has its own `install.sh` that symlinks configs and adds tools to PATH.
 
+## Workflow
+
+All changes must go through a feature branch + PR with Copilot review before merging to master. Never push directly to master.
+
 ## Repository Structure
 
 - **install.sh** — Orchestrator that runs all module installers (or specific ones: `./install.sh git tmux`)
+  - `--full` flag additionally runs `bootstrap.sh` for modules that have one (e.g., package install, validation)
 - **modules/** — Self-contained modules, each with `install.sh`
 - **lib/goodies-lib.sh** — Shared helpers (safe_link, ensure_dir, path_append, logging, platform detection)
 - **tests/** — BATS test suite with per-module and integration tests
@@ -56,6 +61,8 @@ safe_link "${BASEDIR}/config" ~/.config
 ```
 
 `safe_link` skips if destination is a regular file (not a symlink) and returns non-zero in that case. Module installers end with `true` to avoid failing under `set -e` when a skip occurs.
+
+Modules can optionally include a `bootstrap.sh` for heavier setup (package installs, validation, compilation). It only runs when `--full` is passed to the orchestrator.
 
 ## Key Tools
 
