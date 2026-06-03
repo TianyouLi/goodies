@@ -55,7 +55,7 @@ source "${BASEDIR}/../../lib/goodies-lib.sh"
 safe_link "${BASEDIR}/config" ~/.config
 ```
 
-`safe_link` skips if destination is a regular file (not a symlink) — safe to run repeatedly.
+`safe_link` skips if destination is a regular file (not a symlink) and returns non-zero in that case. Module installers end with `true` to avoid failing under `set -e` when a skip occurs.
 
 ## Key Tools
 

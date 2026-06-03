@@ -14,6 +14,10 @@ if [ $# -eq 0 ]; then
     done
 else
     for mod in "$@"; do
+        if [[ "$mod" == */* ]] || [[ "$mod" == ".." ]]; then
+            log_error "Invalid module name: $mod"
+            exit 1
+        fi
         if [ -f "$SCRIPT_DIR/modules/$mod/install.sh" ]; then
             log_info "Installing module: $mod"
             bash "$SCRIPT_DIR/modules/$mod/install.sh"
