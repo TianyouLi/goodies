@@ -33,3 +33,35 @@ teardown() {
     run bash "$GOODIES_ROOT/install.sh" nonexistent
     assert_failure
 }
+
+@test "orchestrator without --full skips bootstrap" {
+    mkdir -p "$GOODIES_ROOT/modules/_test"
+    echo '#!/bin/bash' > "$GOODIES_ROOT/modules/_test/install.sh"
+    echo 'touch "$HOME/.test_installed"' >> "$GOODIES_ROOT/modules/_test/install.sh"
+    echo '#!/bin/bash' > "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+    echo 'touch "$HOME/.test_bootstrapped"' >> "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+    chmod +x "$GOODIES_ROOT/modules/_test/install.sh" "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+
+    run bash "$GOODIES_ROOT/install.sh" _test
+    assert_success
+    [ -f "$HOME/.test_installed" ]
+    [ ! -f "$HOME/.test_bootstrapped" ]
+
+    rm -rf "$GOODIES_ROOT/modules/_test"
+}
+
+@test "orchestrator --full runs bootstrap scripts" {
+    mkdir -p "$GOODIES_ROOT/modules/_test"
+    echo '#!/bin/bash' > "$GOODIES_ROOT/modules/_test/install.sh"
+    echo 'touch "$HOME/.test_installed"' >> "$GOODIES_ROOT/modules/_test/install.sh"
+    echo '#!/bin/bash' > "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+    echo 'touch "$HOME/.test_bootstrapped"' >> "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+    chmod +x "$GOODIES_ROOT/modules/_test/install.sh" "$GOODIES_ROOT/modules/_test/bootstrap.sh"
+
+    run bash "$GOODIES_ROOT/install.sh" --full _test
+    assert_success
+    [ -f "$HOME/.test_installed" ]
+    [ -f "$HOME/.test_bootstrapped" ]
+
+    rm -rf "$GOODIES_ROOT/modules/_test"
+}
