@@ -25,6 +25,7 @@ teardown() {
 @test "emacs module skips existing regular .emacs file" {
     echo "custom emacs config" > "$HOME/.emacs"
     run bash "$GOODIES_ROOT/modules/emacs/install.sh"
+    assert_success
     [ ! -L "$HOME/.emacs" ]
     [ "$(cat "$HOME/.emacs")" = "custom emacs config" ]
 }

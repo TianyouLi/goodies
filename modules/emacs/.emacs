@@ -13,8 +13,8 @@
         ("http" . "child-prc.intel.com:913")
         ("https" . "child-prc.intel.com:913")))
 
-(setq package-archives '(("gnu"   . "http://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
-			 ("melpa" . "http://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+(setq package-archives '(("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+			 ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
 
 (require 'package)
 (package-initialize)
@@ -29,7 +29,7 @@
 
 (setq inhibit-startup-message t)
 (menu-bar-mode -1)
-(setq tool-bar-mode nil)
+(tool-bar-mode -1)
 (setq make-backup-files nil)
 
 ;;; reduce font lock overhead to open 'large' c/c++ files
@@ -58,7 +58,7 @@
 
 
 ;; ------------------------------------------
-;; keyboad map config
+;; keyboard map config
 ;; ------------------------------------------
 (global-set-key "\C-o" 'undo-only)
 (global-set-key "\C-u" 'enlarge-window)
@@ -157,10 +157,10 @@
   (global-flycheck-mode t))
 
 ;; ------------------------------------------
-;; heml-gtags mode
+;; helm-gtags mode
 ;; ------------------------------------------
 (use-package helm-gtags
-  :ensure
+  :ensure t
   :init
   (add-hook
    'c-mode-common-hook
@@ -317,7 +317,7 @@
   '(
     ("\\.sh$" . sh-mode)
     ("\\.h$" . c++-mode)
-    ("\\.hh$". c++-mode)
+    ("\\.hh$" . c++-mode)
     ("\\.csh$" . csh-mode)
     ("\\.py$" . python-mode)
     ("Makefile*" . makefile-gmake-mode)
