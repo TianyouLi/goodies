@@ -1,7 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits</table_exists>
-    </preconditions>
-
-    <query><![CDATA[SELECT UserID, SearchPhrase, COUNT(*) FROM hits GROUP BY UserID, SearchPhrase LIMIT 10;]]></query>
-</test>

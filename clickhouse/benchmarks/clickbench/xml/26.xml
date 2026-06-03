@@ -1,7 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits</table_exists>
-    </preconditions>
-
-    <query><![CDATA[SELECT SearchPhrase FROM hits WHERE SearchPhrase <> '' ORDER BY SearchPhrase LIMIT 10;]]></query>
-</test>
