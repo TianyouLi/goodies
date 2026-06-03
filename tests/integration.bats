@@ -13,6 +13,8 @@ teardown() {
 @test "orchestrator installs all modules without error" {
     run bash "$GOODIES_ROOT/install.new.sh"
     assert_success
+    [ -L "$HOME/.bash_aliases" ]
+    [ -L "$HOME/.claude/settings.json" ]
 }
 
 @test "orchestrator is idempotent" {
