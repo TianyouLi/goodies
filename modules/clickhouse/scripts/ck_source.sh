@@ -12,7 +12,7 @@ usage() {
 
 while getopts ":s:h:" o; do
     case "${o}" in
-        b)
+        s)
             SRC_DIR=${OPTARG}
             ;;
 	h)
@@ -30,7 +30,7 @@ if [ -z "${SRC_DIR}" ]; then
     SRC_DIR=${CUR_DIR}/clickhouse
 fi
 
-if [ ! -d "${BLD_DIR}" ]; then
+if [ ! -d "${SRC_DIR}" ]; then
     SRC_DIR=${CUR_DIR}/${SRC_DIR}
 fi
 
@@ -39,6 +39,6 @@ CK_DIR=${SRC_DIR}
 git clone https://github.com/TianyouLi/ClickHouse.git ${CK_DIR}
 
 cd ${CK_DIR}
-git remote add upstream git@github.com:ClickHouse/ClickHouse.git
+git remote add upstream https://github.com/ClickHouse/ClickHouse.git
 
 cd ${CUR_DIR}

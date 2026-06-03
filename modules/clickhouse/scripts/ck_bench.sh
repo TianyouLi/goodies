@@ -72,6 +72,6 @@ else
     QUERY=`cat ${SCRIPT_DIR}/../benchmarks/${QUERY} | tr '\n' ' '`
 fi
 
-echo -e "Will bencmark query ${ITERATIONS} times: \n\t ${QUERY}"
+echo -e "Will benchmark query ${ITERATIONS} times: \n\t ${QUERY}"
 
 ${CK_BIN} --port ${PORT} -i ${ITERATIONS} -q "${QUERY}" 

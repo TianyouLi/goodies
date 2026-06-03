@@ -7,7 +7,7 @@ usage() {
     echo "Usage: $0
     	 	 [-s source_dir <default current dir>] 
                  [-t tag <default master>]
-                 [-b build_dir <default source_dir/buidl_tag]
+                 [-b build_dir <default source_dir/build_tag]
                  [-h help]";
     exit 1;
 }

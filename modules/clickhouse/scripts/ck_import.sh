@@ -43,7 +43,7 @@ if [ ! -d "${DB_DIR}" ]; then
 fi
 
 if [ ! -d "${DB_DIR}" ]; then
-    echo "Database dir ${DBDIR} does not exist."
+    echo "Database dir ${DB_DIR} does not exist."
     exit 1
 fi
 

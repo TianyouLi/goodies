@@ -21,7 +21,7 @@ with open(QS_FILE) as fp:
     index = 0
     for line in fp.readlines():
         q_file = os.path.join(Q_DIR, str(index))
-        xml_file = os.path.join(XML_DIR, str(index) + '.xml')
+        xml_file = os.path.join(XML_DIR, str(index + 1) + '.xml')
         with open(q_file, mode='w', encoding='utf-8') as ofp:
             ofp.write(line)
         with open(xml_file, mode='w', encoding='utf-8') as ofp:
