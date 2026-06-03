@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>hits</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT SearchPhrase, COUNT(*) AS c FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;]]></query>
+</test>

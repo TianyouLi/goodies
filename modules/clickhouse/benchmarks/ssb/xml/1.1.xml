@@ -1,0 +1,7 @@
+<test>
+    <preconditions>
+        <table_exists>lineorder_flat</table_exists>
+    </preconditions>
+
+    <query><![CDATA[SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue FROM lineorder_flat WHERE toYear(LO_ORDERDATE) = 1993 AND LO_DISCOUNT BETWEEN 1 AND 3 AND LO_QUANTITY < 25;]]></query>
+</test>
