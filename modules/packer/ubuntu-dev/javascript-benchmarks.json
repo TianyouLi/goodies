@@ -1,0 +1,34 @@
+{
+		"builders": [
+				{
+						"type": "docker",
+						"image": "ubuntu:14.04",
+						"export_path": "javascript-benchmarks.tar"
+				}
+		],
+
+		"provisioners": [
+				{
+						"type": "file",
+						"source": "run.sh",
+						"destination": "/etc/init.d/run-java-script-benchmarks.sh"
+				},
+				{
+						"type": "shell",
+						"scripts": [
+								"javascript-benchmark-install.sh"
+						]
+				}
+		],
+		"post-processors": [
+				[
+						{
+								"type": "docker-import",
+								"repository": "lity/javascript-benchmarks",
+								"tag": "0.1"
+						},
+						"docker-push"
+				]
+		]
+}
+
