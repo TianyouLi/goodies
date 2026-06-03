@@ -19,8 +19,8 @@ echo 'root:123456' | chpasswd
 # create directory for sshd
 mkdir -p /var/run/sshd
 
-# chmod for run.sh
-chmod +x /etc/init.d/run.sh
+# chmod for run script
+chmod +x /etc/init.d/run-java-script-benchmarks.sh
 
 # add user
 adduser --disabled-password --gecos ""  lity
@@ -57,6 +57,7 @@ if [ $? -eq 0 ]; then
 else
     connect -S proxy-socks.jf.intel.com:1080 $@
 fi' | tee -a /usr/local/bin/socks-git
+chmod +x /usr/local/bin/socks-git
 
 
 ## setup nginx
