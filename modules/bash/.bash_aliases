@@ -9,6 +9,6 @@ alias sudo='sudo -E'
 
 alias claude='claude --dangerously-skip-permissions'
 
-alias
-
-export TERM="screen-256color"
+if [ -n "$TMUX" ]; then
+    export TERM="screen-256color"
+fi

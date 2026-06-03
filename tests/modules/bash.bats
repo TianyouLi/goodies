@@ -25,9 +25,10 @@ teardown() {
     [ "$count" -eq 1 ]
 }
 
-@test "bash module skips existing regular .bash_aliases file" {
+@test "bash module skips existing regular .bash_aliases file with warning" {
     echo "custom content" > "$HOME/.bash_aliases"
     run bash "$GOODIES_ROOT/modules/bash/install.sh"
+    assert_output --partial "exists as a regular file"
     [ ! -L "$HOME/.bash_aliases" ]
     [ "$(cat "$HOME/.bash_aliases")" = "custom content" ]
 }
