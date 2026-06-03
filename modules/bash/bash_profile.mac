@@ -1,0 +1,27 @@
+export PATH="/usr/local/sbin:$PATH"
+export CLICOLOR=1
+
+## suppress macOS bash deprecation warning
+export BASH_SILENCE_DEPRECATION_WARNING=1
+
+## node version manager
+export NVM_DIR=~/.nvm
+if command -v brew &>/dev/null; then
+    NVM_SH="$(brew --prefix nvm)/nvm.sh"
+    [ -f "$NVM_SH" ] && source "$NVM_SH"
+fi
+
+## git completion and prompt
+export GIT_PS1_SHOWCOLORHINTS=true
+if [ -d ~/.git_env ]; then
+    for f in ~/.git_env/*; do
+        [ -f "$f" ] && . "$f"
+    done
+fi
+
+## bash ps1
+if command -v __git_ps1 &>/dev/null; then
+    PS1="\n\[\033[1;37m\]\342\224\214(\[\033[01;34m\]\u\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\w\$(__git_ps1)\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\$(ls -1 | wc -l | sed 's: ::g') files, \$(ls -lah | grep -m 1 total | sed 's/total //')b\[\033[1;37m\])\n\342\224\224\342\206\222> \[\033[0m\]"
+else
+    PS1="\n\[\033[1;37m\]\342\224\214(\[\033[01;34m\]\u\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\w\[\033[1;37m\])\342\224\200(\[\033[1;32m\]\$(ls -1 | wc -l | sed 's: ::g') files, \$(ls -lah | grep -m 1 total | sed 's/total //')b\[\033[1;37m\])\n\342\224\224\342\206\222> \[\033[0m\]"
+fi
