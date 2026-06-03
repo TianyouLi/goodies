@@ -8,13 +8,25 @@
  '(gnutls-algorithm-priority "NORMAL:-VERS-TLS1.3")
  '(package-selected-packages
    '(color-identifiers-mode js2-mode treemacs-persp treemacs-magit treemacs-icons-dired treemacs-projectile treemacs-evil treemacs flycheck-rust helm-gtags rtags company-shell company)))
-(setq url-proxy-services
-      '(("no_proxy" . "^\\(localhost\\|10.*\\)")
-        ("http" . "child-prc.intel.com:913")
-        ("https" . "child-prc.intel.com:913")))
+(require 'subr-x)
 
-(setq package-archives '(("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
-			 ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+(defvar goodies--fqdn
+  (string-trim (shell-command-to-string "hostname -f 2>/dev/null || hostname")))
+
+(defvar goodies--at-intel
+  (string-match-p "\\.intel\\.com$" goodies--fqdn))
+
+(when goodies--at-intel
+  (setq url-proxy-services
+        '(("no_proxy" . "^\\(localhost\\|10.*\\)")
+          ("http" . "child-prc.intel.com:913")
+          ("https" . "child-prc.intel.com:913"))))
+
+(if goodies--at-intel
+    (setq package-archives '(("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+                             ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+  (setq package-archives '(("gnu"   . "https://elpa.gnu.org/packages/")
+                           ("melpa" . "https://melpa.org/packages/"))))
 
 (require 'package)
 (package-initialize)
@@ -39,22 +51,9 @@
 ;; -------------------------------------------
 ;; set line number
 ;; -------------------------------------------
-(global-linum-mode t)
-(unless window-system
-  (add-hook 'linum-before-numbering-hook
-	    (lambda ()
-	      (setq-local linum-format-fmt
-			  (let ((w (length (number-to-string
-					    (count-lines (point-min) (point-max))))))
-			    (concat "%" (number-to-string w) "d"))))))
-
-(defun linum-format-func (line)
-  (concat
-   (propertize (format linum-format-fmt line) 'face 'linum)
-   (propertize " " 'face 'mode-line)))
-
-(unless window-system
-  (setq linum-format 'linum-format-func))
+(if (fboundp 'global-display-line-numbers-mode)
+    (global-display-line-numbers-mode t)
+  (global-linum-mode t))
 
 
 ;; ------------------------------------------
@@ -171,37 +170,17 @@
 ;; ------------------------------------------
 ;; rust mode
 ;; ------------------------------------------
-(use-package racer
-  :ensure t
-  :config
-  (setq racer-cmd "/home/tli7/.cargo/bin/racer")
-  (setq racer-rust-src-path "/home/tli7/.rust/src/"))
-
-(use-package company-racer
+(use-package rust-mode
   :ensure t)
+
+(when (>= emacs-major-version 27)
+  (use-package eglot
+    :ensure t
+    :hook (rust-mode . eglot-ensure)))
 
 (use-package flycheck-rust
-  :ensure t)
-
-(use-package rust-mode
   :ensure t
-  :init
-  (add-hook 'rust-mode-hook
-	    '(lambda ()
-	       ;; Enable racer
-	       (racer-activate)
-	       ;; Hook in racer with eldoc to provide documentation
-	       (racer-turn-on-eldoc)
-	       ;; Use flycheck-rust in rust-mode
-	       (add-hook 'flycheck-mode-hook #'flycheck-rust-setup)
-	       ;; Use company-racer in rust mode
-	       (set (make-local-variable 'company-backends) '(company-racer))
-	       ;; Key binding to jump to method definition
-	       (local-set-key (kbd "M-.") #'racer-find-definition)
-	       ;; Key binding to auto complete and indent
-	       (local-set-key (kbd "TAB") #'racer-complete-or-indent))))
-
-(add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode))
+  :hook (rust-mode . flycheck-rust-setup))
 
 ;; ------------------------------------------
 ;; key bindings
