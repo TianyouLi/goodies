@@ -1,7 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits</table_exists>
-    </preconditions>
-
-    <query><![CDATA[SELECT SUM(AdvEngineID), COUNT(*), AVG(ResolutionWidth) FROM hits;]]></query>
-</test>

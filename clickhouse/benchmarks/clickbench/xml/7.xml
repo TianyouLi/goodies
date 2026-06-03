@@ -1,7 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits</table_exists>
-    </preconditions>
-
-    <query><![CDATA[SELECT MIN(EventDate), MAX(EventDate) FROM hits;]]></query>
-</test>

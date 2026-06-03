@@ -1,7 +1,0 @@
-<test>
-    <preconditions>
-        <table_exists>hits</table_exists>
-    </preconditions>
-
-    <query><![CDATA[SELECT UserID FROM hits WHERE UserID = 435090932899640449;]]></query>
-</test>

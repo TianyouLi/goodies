@@ -1,37 +1,25 @@
 #!/bin/bash
+set -euo pipefail
 
-SCRIPT=$(readlink -f "$0")
-BASEDIR=$(dirname $SCRIPT)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GOODIES_ROOT="$SCRIPT_DIR"
+source "$SCRIPT_DIR/lib/goodies-lib.sh"
 
-DOTEMACS=$BASEDIR/emacs/.emacs
-DOTELISP=$BASEDIR/emacs/.elisp
-DOTTMUX=$BASEDIR/tmux/.tmux.conf
-DOTALIASES=$BASEDIR/.bash_aliases
-DOTGITENV=$BASEDIR/git_env
-
-ln -s -f $DOTEMACS ~/.emacs
-ln -s -f $DOTELISP ~/.elisp
-ln -s -f $DOTTMUX ~/.tmux.conf
-ln -s -f $DOTALIASES ~/.bash_aliases
-
-# set git
-rm -f ~/.git_env
-ln -s -f $DOTGITENV ~/.git_env
-
-# set tpm
-mkdir -p ~/.tmux/plugins
-rm -f ~/.tmux/plugins/tpm 
-ln -s -f ${BASEDIR}/tmux/tpm ~/.tmux/plugins/tpm
-
-# claude code config
-bash "${BASEDIR}/claude/install.sh"
-
-# kenrel tools path
-KERNEL_TOOLS=${BASEDIR}/kernel
-
-# clickhouse tools path
-CLICKHOUSE_TOOLS=${BASEDIR}/clickhouse/scripts
-
-PATH_ENTRY="export PATH=\${PATH}:${KERNEL_TOOLS}:${CLICKHOUSE_TOOLS}"
-grep -qxF "${PATH_ENTRY}" ~/.bashrc 2>/dev/null || echo "${PATH_ENTRY}" >> ~/.bashrc
-
+if [ $# -eq 0 ]; then
+    for mod_dir in "$SCRIPT_DIR"/modules/*/; do
+        if [ -f "$mod_dir/install.sh" ]; then
+            log_info "Installing module: $(basename "$mod_dir")"
+            bash "$mod_dir/install.sh"
+        fi
+    done
+else
+    for mod in "$@"; do
+        if [ -f "$SCRIPT_DIR/modules/$mod/install.sh" ]; then
+            log_info "Installing module: $mod"
+            bash "$SCRIPT_DIR/modules/$mod/install.sh"
+        else
+            log_error "Module not found: $mod"
+            exit 1
+        fi
+    done
+fi

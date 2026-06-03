@@ -4,55 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a personal dotfiles and tooling repository containing shell configurations, development environment setup scripts, and performance benchmarking tools — primarily focused on ClickHouse database performance analysis and Linux kernel/CPU management.
+Personal dotfiles and tooling repository organized into self-contained modules. Each module has its own `install.sh` that symlinks configs and adds tools to PATH.
 
 ## Repository Structure
 
-- **Root `install.sh`** — Symlinks dotfiles (emacs, tmux, bash_aliases, git_env) into `$HOME` and adds `kernel/` and `clickhouse/scripts/` to PATH via `.bashrc`
-- **clickhouse/** — ClickHouse build scripts, benchmark harnesses (ClickBench, SSB), and server config
-- **kernel/** — CPU management tools: `corescale.py` (CPU online/offline, cgroup-based core scaling for benchmarks), `kboot.sh` (kexec-based kernel switching)
-- **perf/** — `pt.sh` wraps `perf record`/`perf report`/`perf c2c` for hotspot and cache-line contention analysis
-- **git/** — Git config setup, clang-format integration, commit counting
-- **packer/** — Packer templates for VM provisioning (Chromium dev, Ubuntu dev environments)
-- **tmux/, emacs/, git_env/** — Editor/terminal dotfiles
+- **install.sh** — Orchestrator that runs all module installers (or specific ones: `./install.sh git tmux`)
+- **modules/** — Self-contained modules, each with `install.sh`
+- **lib/goodies-lib.sh** — Shared helpers (safe_link, ensure_dir, path_append, logging, platform detection)
+- **tests/** — BATS test suite with per-module and integration tests
+- **.github/workflows/test.yml** — CI runs BATS on push/PR
+
+## Modules
+
+| Module | Purpose |
+|--------|---------|
+| bash | Shell aliases, bash_profile (macOS) |
+| claude | Claude Code settings.json, custom commands |
+| clickhouse | ClickHouse build/bench/launch scripts, SSB/ClickBench harnesses |
+| emacs | .emacs config |
+| git | Git config, clang-format, git_env |
+| kernel | corescale.py (CPU scaling), kboot.sh (kexec) |
+| packer | VM provisioning templates (Chromium dev, Ubuntu dev) |
+| perf | pt.sh (perf record/report/c2c wrapper) |
+| proxy | switchproxy.sh |
+| tmux | .tmux.conf, TPM (git submodule) |
+
+## Testing
+
+```bash
+# Run all tests
+bash tests/run.sh
+
+# Run a single module's tests
+tests/bats/bats-core/bin/bats tests/modules/bash.bats
+
+# Run integration tests
+tests/bats/bats-core/bin/bats tests/integration.bats
+```
+
+BATS submodules (bats-core, bats-support, bats-assert) live under `tests/bats/`.
+
+## Module Install Pattern
+
+Each module's `install.sh` sources the shared library and uses `safe_link` / `path_append`:
+
+```bash
+#!/bin/bash
+BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${BASEDIR}/../../lib/goodies-lib.sh"
+safe_link "${BASEDIR}/config" ~/.config
+```
+
+`safe_link` skips if destination is a regular file (not a symlink) — safe to run repeatedly.
 
 ## Key Tools
 
-### ClickHouse Scripts (`clickhouse/scripts/`)
-
-- `ck_source.sh -s <dir>` — Clone ClickHouse fork and configure upstream remote
-- `ck_build.sh -s <src> -t <tag> -b <build_dir>` — Checkout tag, init submodules, build with clang/ninja
-- `ck_launch.sh` — Launch ClickHouse server
-- `ck_bench.sh` — Run benchmarks
-
-### Core Scaling (`kernel/corescale.py`)
-
-Used for ClickHouse core-scaling performance experiments. Requires root/sudo for CPU hotplug.
-
-```
-# Enable only specific CPUs (others go offline)
-python3 corescale.py --cpuset 0-7
-
-# Run full scaling experiment
-python3 corescale.py --output ./results --ck_root /path/to/ck --config scale.conf
-
-# Generate reports only
-python3 corescale.py --output ./results --ck_root /path/to/ck --report
-```
-
-### Perf Tracing (`perf/pt.sh`)
-
-```
-pt.sh <platform_label> <command...>
-# Example: pt.sh spr.opt1 ./clickhouse-benchmark ...
-```
-
-Produces hotspot (cycles/instructions) and c2c (cache contention) reports in a labeled output folder.
-
-## SSB Benchmark
-
-```
-cd clickhouse/benchmarks/ssb
-./setup_ssb_db.sh [PORT]       # PORT defaults to 9000
-../run_query.sh QUERY [PORT]   # QUERY: "2.1", "all", etc.
-```
+- `corescale.py` — CPU online/offline + cgroup-based core scaling for ClickHouse benchmarks (requires root)
+- `kboot.sh` — kexec-based kernel switching from /boot
+- `pt.sh <label> <command>` — Perf tracing with hotspot + c2c reports
+- `ck_build.sh` / `ck_bench.sh` / `ck_launch.sh` — ClickHouse build and benchmark automation
