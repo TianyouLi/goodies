@@ -2,10 +2,10 @@
 
 kernels=($(ls -f /boot/vmlinuz-* | cut -c 15-))
 kernels+=("Quit")
-counts=${#kernel[@]}
+counts=${#kernels[@]}
 
 
-CURRENT_KERNEL=`uname -r`
+CURRENT_KERNEL=$(uname -r)
 PS3="Select a kernel(current is ${CURRENT_KERNEL}): "
 select k in "${kernels[@]}"; do
     case ${k} in
@@ -16,7 +16,7 @@ select k in "${kernels[@]}"; do
 	    if [ -z "${k}" ]; then
 		continue
 	    fi
-	    kernel=${k} 
+	    kernel=${k}
 	    break
 	    ;;
     esac
@@ -33,5 +33,6 @@ fi
 kernel="${kernel:-$(uname -r)}"
 kargs="/boot/vmlinuz-$kernel --initrd=/boot/initramfs-$kernel.img"
 
+# Note: $kargs and $reuse are intentionally unquoted to allow word-splitting
 kexec -l -t bzImage $kargs $reuse --append="$*" && \
     systemctl kexec

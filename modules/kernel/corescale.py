@@ -13,14 +13,16 @@ BENCH = os.path.join(CODE_DIR, 'bench_query.sh')
 LAUNCH = os.path.join(CODE_DIR, '..', 'launch.sh')
 QUERY_DIR = os.path.join(CODE_DIR, 'Q')
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-JUPTER_TMPL = os.path.join(CODE_DIR, 'onepager.ipynb.tmpl')
+JUPYTER_TMPL = os.path.join(CODE_DIR, 'onepager.ipynb.tmpl')
 
 
-def execute(cmd, env={}, sync=True):
+def execute(cmd, env=None, sync=True):
+    if env is None:
+        env = {}
     print('Running cmd: ' + cmd)
-    osenv = os.environ
-    osenv.update(env)
-    p = subprocess.Popen(cmd, shell=True, env=osenv,
+    run_env = os.environ.copy()
+    run_env.update(env)
+    p = subprocess.Popen(cmd, shell=True, env=run_env,
                          stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     if sync:
         stdout, _ = p.communicate()
@@ -65,7 +67,7 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     bar = fill * filledLength + '-' * (length - filledLength)
     print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
     # Print New Line on Complete
-    if iteration == total: 
+    if iteration == total:
         print()
 
 class CPUManager(object):
@@ -88,7 +90,7 @@ class CPUManager(object):
 
         online = '1' if enable else '0'
 
-        cmd = 'echo {online} | sudo tee {cpufile} 2>&1 > /dev/null'.format(
+        cmd = 'echo {online} | sudo tee {cpufile} > /dev/null 2>&1'.format(
             online=online, cpufile=cpufilename)
         subprocess.call(cmd, shell=True)
 
@@ -314,7 +316,7 @@ class CoreScale(object):
     def get_result_dir(self, core_count, query):
         path = os.path.join(self.result_folder, str(core_count), str(query))
         # make sure folder created
-        os.system('mkdir -p ' + path)
+        os.makedirs(path, exist_ok=True)
         return path
 
     def get_result_files(self, core_count, query):
@@ -326,7 +328,7 @@ class CoreScale(object):
 
     def get_report_dir(self, query):
         path = os.path.join(self.result_folder, 'reports', str(query))
-        os.system('mkdir -p ' + path)
+        os.makedirs(path, exist_ok=True)
         return path
 
     def run_query(self, core_count, query):
@@ -397,6 +399,8 @@ class CoreScale(object):
     def run(self, corescale_conf):
         with open(corescale_conf) as fp:
             for line in fp.readlines():
+                if not line.strip() or line.strip().startswith('#'):
+                    continue
                 # core_count, cpuset
                 core_count, cpuset = line.split()
                 self.do_scale(core_count, cpuset)
@@ -410,6 +414,8 @@ class CoreScale(object):
                 qps_item = parts[2]
                 qps = float(qps_item.split()[1])
                 qps_list.append(qps)
+        if not qps_list:
+            return 0.0
         return sum(qps_list)/len(qps_list)
 
     def get_score(self, core_count, query):
@@ -507,8 +513,8 @@ class CoreScale(object):
                 ]))
                 fp.write(line + '\n')
 
-    def generate_jupter(self, query):
-        with open(JUPTER_TMPL) as fp:
+    def generate_jupyter(self, query):
+        with open(JUPYTER_TMPL) as fp:
             tmpl = fp.read()
         content = tmpl.replace('${{benchmark}}', 'ClickBench Benchmark')\
                       .replace('${{case_desc}}', 'Q%s' % query)\
@@ -527,7 +533,7 @@ class CoreScale(object):
     def report(self):
         for q in self.queries:
             self.generate_csv(q)
-            self.generate_jupter(q)
+            self.generate_jupyter(q)
 
 
 if __name__ == '__main__':

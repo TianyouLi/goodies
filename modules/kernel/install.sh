@@ -3,4 +3,4 @@
 BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${BASEDIR}/../../lib/goodies-lib.sh"
 
-path_append ~/.bashrc "${BASEDIR}"
+path_append "$HOME/.bashrc" "${BASEDIR}"
