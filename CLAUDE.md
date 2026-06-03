@@ -8,12 +8,12 @@ Personal dotfiles and tooling repository organized into self-contained modules. 
 
 ## Workflow
 
-All changes must go through a feature branch + PR with Copilot review before merging to master. Never push directly to master.
+All changes must go through a feature branch + PR with Copilot review before merging to master. Never push directly to master. Use `/watch-pr` to monitor Copilot review results and fix findings automatically.
 
 ## Repository Structure
 
 - **install.sh** — Orchestrator that runs all module installers (or specific ones: `./install.sh git tmux`)
-  - `--full` flag additionally runs `bootstrap.sh` for modules that have one (e.g., package install, validation)
+  - `--full` flag additionally runs `bootstrap.sh` for modules that have one (e.g., package installs, validation)
 - **modules/** — Self-contained modules, each with `install.sh`
 - **lib/goodies-lib.sh** — Shared helpers (safe_link, ensure_dir, path_append, logging, platform detection)
 - **tests/** — BATS test suite with per-module and integration tests
