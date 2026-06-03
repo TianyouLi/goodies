@@ -38,6 +38,7 @@ teardown() {
     mkdir -p "$HOME/.claude"
     echo '{"custom": true}' > "$HOME/.claude/settings.json"
     run bash "$GOODIES_ROOT/modules/claude/install.sh"
+    assert_success
     [ ! -L "$HOME/.claude/settings.json" ]
     grep -q '"custom"' "$HOME/.claude/settings.json"
 }
