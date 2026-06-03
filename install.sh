@@ -23,11 +23,15 @@ mkdir -p ~/.tmux/plugins
 rm -f ~/.tmux/plugins/tpm 
 ln -s -f ${BASEDIR}/tmux/tpm ~/.tmux/plugins/tpm
 
+# claude code config
+bash "${BASEDIR}/claude/install.sh"
+
 # kenrel tools path
 KERNEL_TOOLS=${BASEDIR}/kernel
 
 # clickhouse tools path
 CLICKHOUSE_TOOLS=${BASEDIR}/clickhouse/scripts
 
-echo "export PATH=${PATH}:${KERNEL_TOOLS}:${CLICKHOUSE_TOOLS}" >> ~/.bashrc
+PATH_ENTRY="export PATH=\${PATH}:${KERNEL_TOOLS}:${CLICKHOUSE_TOOLS}"
+grep -qxF "${PATH_ENTRY}" ~/.bashrc 2>/dev/null || echo "${PATH_ENTRY}" >> ~/.bashrc
 
