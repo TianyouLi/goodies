@@ -95,18 +95,18 @@ The `claude` shell function reads the token from disk on every invocation. Env v
 
 ---
 
-# /distill — Extract Portable Solutions from Sessions
+# /goodies-distill — Extract Portable Solutions from Sessions
 
 **Problem:** You solve interesting problems in Claude sessions all the time — workarounds, automation scripts, config patterns — but they stay buried in conversation history and are never shared.
 
-**Solution:** `/distill` scans your recent session transcripts, identifies reusable solutions, and offers to extract them into standalone tools or documentation.
+**Solution:** `/goodies-distill` scans your recent session transcripts, identifies reusable solutions, and offers to extract them into standalone tools or documentation.
 
 ## Usage
 
 ```bash
 # In any Claude Code session:
-/distill          # scan since last run (or last 7 days if first time)
-/distill -30      # scan last 30 days
+/goodies-distill          # scan since last run (or last 7 days if first time)
+/goodies-distill -30      # scan last 30 days
 ```
 
 ## What it does
@@ -138,7 +138,7 @@ Portable candidates:
 
 ## How it remembers
 
-`/distill` stores a timestamp in `~/.claude/.distill_last_run` after each run. Next time you invoke it without arguments, it only scans sessions since that timestamp — so you won't see the same candidates twice.
+`/goodies-distill` stores a timestamp in `~/.claude/.distill_last_run` after each run. Next time you invoke it without arguments, it only scans sessions since that timestamp — so you won't see the same candidates twice.
 
 ## What it skips
 
