@@ -9,6 +9,7 @@ ensure_dir ~/.local/bin || exit 1
 
 safe_link "${BASEDIR}/settings.json" ~/.claude/settings.json
 safe_link "${BASEDIR}/commands/watch-pr.md" ~/.claude/commands/watch-pr.md
+safe_link "${BASEDIR}/commands/distill.md" ~/.claude/commands/distill.md
 safe_link "${BASEDIR}/env.sh" ~/.bashrc.d/claude.sh
 safe_link "${BASEDIR}/claude-refresh-token" ~/.local/bin/claude-refresh-token
 true
