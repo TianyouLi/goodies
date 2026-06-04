@@ -7,7 +7,6 @@ alias mux='pgrep -vx tmux > /dev/null && \
 
 alias sudo='sudo -E'
 
-alias claude='claude --dangerously-skip-permissions'
 
 if [ -n "$TMUX" ]; then
     export TERM="screen-256color"
