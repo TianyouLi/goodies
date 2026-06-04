@@ -49,6 +49,14 @@ safe_link() {
 
 ensure_dir() {
     local dir="$1"
+    if [ -L "$dir" ] && [ ! -e "$dir" ]; then
+        if rm -f "$dir"; then
+            log_info "Removed broken symlink at $dir"
+        else
+            log_error "Failed to remove broken symlink at $dir"
+            return 1
+        fi
+    fi
     if [ ! -d "$dir" ]; then
         if mkdir -p "$dir"; then
             log_info "Created directory $dir"
