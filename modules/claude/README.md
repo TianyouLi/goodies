@@ -93,6 +93,59 @@ claude
 
 The `claude` shell function reads the token from disk on every invocation. Env vars are scoped to the `command claude` process only — they don't pollute your shell or affect other AWS tools. The token file is created with `600` permissions via `umask 077`.
 
+---
+
+# /distill — Extract Portable Solutions from Sessions
+
+**Problem:** You solve interesting problems in Claude sessions all the time — workarounds, automation scripts, config patterns — but they stay buried in conversation history and are never shared.
+
+**Solution:** `/distill` scans your recent session transcripts, identifies reusable solutions, and offers to extract them into standalone tools or documentation.
+
+## Usage
+
+```bash
+# In any Claude Code session:
+/distill          # scan since last run (or last 7 days if first time)
+/distill -30      # scan last 30 days
+```
+
+## What it does
+
+1. **Scans** all session transcripts (finds `*.jsonl` under `~/.claude/projects/`) within the time range
+2. **Identifies** portable candidates:
+   - New scripts or tools created
+   - Workarounds for non-obvious problems
+   - Reusable shell functions or config snippets
+   - Multi-step workflows that could be scripted
+3. **Presents** a digest grouped by project
+4. **Extracts** (with your approval) selected solutions into proper modules with install scripts and PRs
+
+## Example output
+
+```
+## Session Digest (last 7 days)
+
+### goodies
+Session: Jun 4 — Built token-from-file mechanism for Claude Bedrock auth
+Portable candidates:
+- claude-refresh-token — eliminates re-sourcing .bashrc across terminals
+
+### linux
+Session: Jun 2 — Debugged kernel boot failure with kexec fallback
+Portable candidates:
+- kexec retry with grub fallback — useful for kernel developers doing rapid iteration
+```
+
+## How it remembers
+
+`/distill` stores a timestamp in `~/.claude/.distill_last_run` after each run. Next time you invoke it without arguments, it only scans sessions since that timestamp — so you won't see the same candidates twice.
+
+## What it skips
+
+- Project-specific bug fixes and feature work (not portable)
+- Sessions with no file creation or significant automation
+- Sensitive data is excluded from extracted solutions (tokens, internal URLs are never carried over)
+
 ## Reference
 
 Source: https://github.com/TianyouLi/goodies/tree/master/modules/claude
