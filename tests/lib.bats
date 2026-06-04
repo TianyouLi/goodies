@@ -59,6 +59,16 @@ teardown() {
     [ -d "$dir" ]
 }
 
+@test "ensure_dir removes broken symlink and creates directory" {
+    local dir="$HOME/broken_link_dir"
+    ln -s /nonexistent/path "$dir"
+    [ -L "$dir" ] && [ ! -e "$dir" ]
+    run ensure_dir "$dir"
+    assert_success
+    [ -d "$dir" ]
+    [ ! -L "$dir" ]
+}
+
 # --- path_append tests ---
 
 @test "path_append adds entry to bashrc" {
