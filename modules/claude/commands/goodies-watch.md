@@ -60,7 +60,7 @@ Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
 1. Delete this cron job.
 2. Check if there are multiple commits on the branch ahead of the base branch. If only one commit exists, there is nothing to squash or force-push — just report LGTM and stop.
 3. If multiple commits exist: squash all commits on the current branch into a single commit. Use the PR title as the commit message subject and include a body summarizing the changes. Preserve any `Co-Authored-By` trailers from the squashed commits. Add a `Reviewed-by: copilot-pull-request-reviewer <copilot-pull-request-reviewer@github.com>` trailer. Force-push with lease.
-4. Report the result. The user can re-run `/watch-pr` to start a new watch cycle after pushing further changes.
+4. Report the result. The user can re-run `/goodies-watch` to start a new watch cycle after pushing further changes.
 
 **Case B — No pending review + unreplied inline comments exist:**
 Notify the user "Copilot review has inline findings on PR #<NUMBER>!" and fetch the unreplied top-level comment details (exclude replies):
