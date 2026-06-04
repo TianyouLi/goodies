@@ -23,8 +23,10 @@
           ("https" . "child-prc.intel.com:913"))))
 
 (if goodies--at-intel
-    (setq package-archives '(("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
-                             ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+    (progn
+      (setq package-archives '(("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+                               ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")))
+      (setq package-check-signature nil))
   (setq package-archives '(("gnu"   . "https://elpa.gnu.org/packages/")
                            ("melpa" . "https://melpa.org/packages/"))))
 
@@ -173,10 +175,8 @@
 (use-package rust-mode
   :ensure t)
 
-(when (>= emacs-major-version 27)
-  (use-package eglot
-    :ensure t
-    :hook (rust-mode . eglot-ensure)))
+(when (and (>= emacs-major-version 29) (fboundp 'eglot-ensure))
+  (add-hook 'rust-mode-hook 'eglot-ensure))
 
 (use-package flycheck-rust
   :ensure t
