@@ -59,7 +59,19 @@ If the count is 0, no Copilot review has been submitted yet. Report "No Copilot 
   LAST_REVIEW=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
 
-Compare using jq: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review. A new review is expected but hasn't arrived yet. However, if the review hasn't arrived after 15 minutes (compare current time vs LAST_COMMIT), report "Copilot review appears stalled — no new review 15+ minutes after the last push. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data. Otherwise, output nothing and stop — keep polling.
+Compare using jq: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review. Check whether a review request was triggered:
+
+1. **Review pending (`requested_reviewers` includes Copilot):** A review is in flight — output nothing and stop (keep polling).
+
+2. **No review pending + commit is newer than review = review was never triggered (likely throttled).** Attempt one force-push with lease to re-trigger the push event:
+   ```bash
+   git push --force-with-lease
+   ```
+   Report: "Push at <LAST_COMMIT> did not trigger a Copilot review — retrying with force-push." Then stop and keep polling. Track that a retry was attempted (e.g., set a flag in the cron prompt or check commit SHAs). If the next poll still finds no pending review and no new review after the force-push, report: "Copilot review appears stalled — force-push retry did not trigger a review. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data.
+
+3. **No review pending + review hasn't arrived after 15 minutes (compare current time vs LAST_COMMIT) without a force-push retry:** Report "Copilot review appears stalled — no new review 15+ minutes after the last push." Attempt one force-push with lease as above. If already retried, fall through to Case A/B evaluation.
+
+Otherwise (within 15 minutes, review pending), output nothing and stop — keep polling.
 
 **Case A — No pending review + no unreplied inline comments + review is fresh:**
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
@@ -126,7 +138,7 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 ## Push timing (throttle prevention)
 
-When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~2-3 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
+When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
 
 **Before every push**, ensure sufficient time has elapsed since the last Copilot review submission:
 
@@ -140,7 +152,7 @@ When branch protection rules include Copilot review-on-push, rapid successive pu
 3. Compute seconds elapsed since the reference time:
   NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
-  REMAINING=$((180 - ELAPSED))
+  REMAINING=$((300 - ELAPSED))
 
 4. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background using Bash job control (`sleep $REMAINING && git push &`). This keeps the conversation responsive — if the user requests additional changes during the wait, amend the pending commit before the background push fires.
 
@@ -161,7 +173,7 @@ When branch protection rules include Copilot review-on-push, rapid successive pu
 **Rules:**
 - Always batch fixes into a single commit/push (see Case B above).
 - Never push incrementally per finding.
-- Always enforce the 3-minute gap from the later of (last review, last commit). This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
+- Always enforce the 5-minute gap from the later of (last review, last commit). This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
 - Run the delay + push in the background so the assistant stays available for interaction during the wait.
 - Never reply to comments or resolve threads until the push has been verified successful.
 ```
