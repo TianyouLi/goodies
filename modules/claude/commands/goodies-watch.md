@@ -55,11 +55,22 @@ Note: This only covers inline review comments (`/pulls/<NUMBER>/comments`), not 
 
 If the count is 0, no Copilot review has been submitted yet. Report "No Copilot review found — was it requested? Check the Reviewers sidebar in the GitHub PR interface." and delete this cron job.
 
-**Staleness check:** Get the latest submitted Copilot review timestamp and the latest commit timestamp on the branch (paginate commits and sort to ensure the latest is picked):
-  LAST_REVIEW=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null)] | sort_by(.submitted_at) | last | .submitted_at')
-  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '[.[] | .commit.committer.date] | sort | last')
+**Staleness check:** Determine when Copilot last completed a review by using the latest comment timestamp (primary signal) with review `submitted_at` as fallback for LGTM reviews (no comments). Emit one value per item across pages and compute max in shell (avoids per-page sort issue with `--paginate`):
+  LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
+  LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
+  LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
+  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
 
-Compare using jq: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review. A new review is expected but hasn't arrived yet. However, if the review hasn't arrived after 15 minutes (compare current time vs LAST_COMMIT), report "Copilot review appears stalled — no new review 15+ minutes after the last push. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data. Otherwise, output nothing and stop — keep polling.
+Compare: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review (note: Step 1 already confirmed no review is pending, so this means the review was never triggered — likely throttled). Decide:
+
+1. **Within 15 minutes of LAST_COMMIT:** Output nothing and stop — keep polling to give Copilot time.
+
+2. **Over 15 minutes since LAST_COMMIT (or no review triggered after a previous force-push retry):** Attempt one force-push with lease to re-trigger the push event. Note: `git push --force-with-lease` will report "Everything up-to-date" if the remote already has the same SHA — GitHub only fires a push event when the ref actually changes. To produce a new SHA, amend the tip commit's timestamp first:
+
+       git commit --amend --no-edit --date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+       git push --force-with-lease
+
+   Report: "Push at <LAST_COMMIT> did not trigger a Copilot review — retrying with force-push." Then stop and keep polling. Track that a retry was attempted (e.g., compare the current HEAD SHA against the commit SHA recorded in the last review). If the next poll still finds no pending review and no new review after the force-push, report: "Copilot review appears stalled — force-push retry did not trigger a review. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data.
 
 **Case A — No pending review + no unreplied inline comments + review is fresh:**
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
@@ -74,9 +85,19 @@ Notify the user "Copilot review has inline findings on PR #<NUMBER>!" and fetch 
 
 Filter to only unreplied ones, then present each finding with fix/dismiss/defer options. For each decision, state the rationale — why the fix was made or why the finding doesn't apply.
 
+**Important: batch all fixes into a single push.** Do NOT push after each individual fix. Instead:
+1. Present all findings to the user at once.
+2. Fix/dismiss/defer each finding (making code changes as needed).
+3. Stage all changes into a single commit.
+4. Start the push-delay check (see "Push timing" below). During the wait, remain responsive — if the user requests additional changes, amend the commit before the push fires.
+5. Once the delay has elapsed, push.
+6. Then reply to all comments and resolve all threads.
+
+This avoids triggering Copilot's push-throttle and maximizes the content of each push.
+
 ## Replying to comments
 
-After the user decides on each finding (fix, dismiss, or defer), post a reply to that Copilot comment on GitHub using:
+After all fixes are committed and pushed (so the commit SHA is available for Fix replies), post a reply to each Copilot comment:
   gh api repos/<REPO>/pulls/<NUMBER>/comments/<COMMENT_ID>/replies -f body="<REPLY>"
 
 Reply format:
@@ -86,19 +107,89 @@ Reply format:
 
 ## Resolving review threads
 
-After replying to a comment, resolve the corresponding review thread so it collapses in the GitHub UI. This requires the GraphQL thread node ID.
+After replying to comments, resolve the corresponding review threads so they collapse in the GitHub UI.
 
-Derive owner and repo name from <REPO> (which is in "owner/name" format), then query the thread ID by matching the comment's database ID:
+Fetch all thread IDs and their first-comment database IDs in one paginated GraphQL call, then filter client-side to unresolved threads:
+
   OWNER=$(echo "<REPO>" | cut -d/ -f1)
   REPO_NAME=$(echo "<REPO>" | cut -d/ -f2)
-  THREAD_ID=$(gh api graphql -f query='{ repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100) { nodes { id comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == <COMMENT_ID>) | .id')
 
-Then resolve it (only if THREAD_ID is non-empty):
-  if [ -n "$THREAD_ID" ]; then
-    gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "'"$THREAD_ID"'"}) { thread { isResolved } } }'
-  fi
+Paginate with cursors until `hasNextPage` is false. Loop structure (uses two query forms to handle `after: null` on first iteration):
 
-Do this for every comment that was replied to (fix, dismiss, or defer). If the thread is already resolved, the mutation is a no-op. If the lookup returns no match (e.g., the comment was deleted), the guard skips the resolve call.
+    CURSOR=""
+    ALL_THREADS="[]"
+    while true; do
+      if [ -z "$CURSOR" ]; then
+        QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100) { pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }'
+      else
+        QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100, after: "'"$CURSOR"'") { pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }'
+      fi
+      RESULT=$(gh api graphql -f query="$QUERY" --jq '.data.repository.pullRequest.reviewThreads')
+      ALL_THREADS=$(echo "$ALL_THREADS" "$RESULT" | jq -s '.[0] + ([.[1].nodes[] | select(.isResolved == false)])')
+      HAS_NEXT=$(echo "$RESULT" | jq -r '.pageInfo.hasNextPage')
+      [ "$HAS_NEXT" = "true" ] || break
+      CURSOR=$(echo "$RESULT" | jq -r '.pageInfo.endCursor')
+    done
+
+Build a map of `{comment_databaseId → thread_id}` from `ALL_THREADS` (already filtered to unresolved).
+
+For each replied comment, look up the thread ID from the map and resolve it:
+  gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<THREAD_ID>"}) { thread { isResolved } } }'
+
+Skip if the comment ID is not in the map (thread already resolved or comment deleted). This approach handles PRs with >100 review threads by paginating.
+
+## Push timing (throttle prevention)
+
+When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
+
+**Before every push**, ensure sufficient time has elapsed since the last Copilot review completion:
+
+1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback) and latest commit timestamp. Emit one value per item and compute max in shell to avoid per-page sort issues:
+  LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
+  LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
+  LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
+  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
+
+2. Determine the reference time — use whichever is later (the review or the commit). If LAST_REVIEW resolves to epoch (no review yet), fall back to LAST_COMMIT:
+  REF_TIME=$(jq -rn --arg r "$LAST_REVIEW" --arg c "$LAST_COMMIT" '[($r | fromdateiso8601), ($c | fromdateiso8601)] | max | todateiso8601')
+
+3. Compute seconds elapsed since the reference time:
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
+  REMAINING=$((300 - ELAPSED))
+
+4. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
+
+       sleep $REMAINING && git push &
+       PUSH_PID=$!
+
+   This keeps the conversation responsive — if the user requests additional changes during the wait, amend the pending commit before the background push fires.
+
+5. If REMAINING is 0 or negative, push immediately (foreground) and capture exit code directly:
+
+       git push
+       PUSH_EXIT=$?
+
+6. **Wait for push completion before replying/resolving.** Verify the push succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
+
+       # For background push (step 4):
+       wait $PUSH_PID
+       PUSH_EXIT=$?
+
+       # For either path:
+       if [ $PUSH_EXIT -ne 0 ]; then
+         echo "Push failed (exit $PUSH_EXIT). Aborting reply/resolve."
+         # Do NOT reply to comments or resolve threads if push failed
+       fi
+
+   Only proceed to reply and resolve threads after confirming the push completed successfully. This ensures commit SHAs cited in replies actually exist on the remote.
+
+**Rules:**
+- Always batch fixes into a single commit/push (see Case B above).
+- Never push incrementally per finding.
+- Always enforce the 5-minute gap from the later of (last review, last commit). This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
+- Run the delay + push in the background so the assistant stays available for interaction during the wait.
+- Never reply to comments or resolve threads until the push has been verified successful.
 ```
 
 7. Then immediately run the first check now without waiting for the first cron fire.
