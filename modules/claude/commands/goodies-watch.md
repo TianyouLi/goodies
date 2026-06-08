@@ -50,12 +50,18 @@ Note: This only covers inline review comments (`/pulls/<NUMBER>/comments`), not 
 
 ## Step 3: Decide outcome
 
-**Before deciding:** Confirm at least one Copilot review exists:
-  gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i"))] | length'
+**Before deciding:** Confirm at least one submitted Copilot review exists (filter out pending reviews where `submitted_at` is null):
+  gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null)] | length'
 
 If the count is 0, no Copilot review has been submitted yet. Report "No Copilot review found — was it requested? Check the Reviewers sidebar in the GitHub PR interface." and delete this cron job.
 
-**Case A — No pending review + no unreplied inline comments:**
+**Staleness check:** Get the latest submitted Copilot review timestamp and the latest commit timestamp on the branch (paginate commits and sort to ensure the latest is picked):
+  LAST_REVIEW=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null)] | sort_by(.submitted_at) | last | .submitted_at')
+  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '[.[] | .commit.committer.date] | sort | last')
+
+Compare using jq: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review. A new review is expected but hasn't arrived yet. However, if the review hasn't arrived after 15 minutes (compare current time vs LAST_COMMIT), report "Copilot review appears stalled — no new review 15+ minutes after the last push. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data. Otherwise, output nothing and stop — keep polling.
+
+**Case A — No pending review + no unreplied inline comments + review is fresh:**
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
 1. Delete this cron job.
 2. Check if there are multiple commits on the branch ahead of the base branch. If only one commit exists, there is nothing to squash or force-push — just report LGTM and stop.
@@ -71,7 +77,7 @@ Filter to only unreplied ones, then present each finding with fix/dismiss/defer 
 ## Replying to comments
 
 After the user decides on each finding (fix, dismiss, or defer), post a reply to that Copilot comment on GitHub using:
-  gh api repos/<REPO>/pulls/<NUMBER>/comments -f body="<REPLY>" -f in_reply_to=<COMMENT_ID>
+  gh api repos/<REPO>/pulls/<NUMBER>/comments/<COMMENT_ID>/replies -f body="<REPLY>"
 
 Reply format:
 - **Fix**: "Fixed in <commit-sha>. <brief explanation of the change>."
