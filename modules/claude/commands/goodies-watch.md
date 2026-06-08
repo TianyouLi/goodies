@@ -88,13 +88,17 @@ Reply format:
 
 After replying to a comment, resolve the corresponding review thread so it collapses in the GitHub UI. This requires the GraphQL thread node ID.
 
-Get the thread ID for a comment by querying the PR's review threads and matching the comment's database ID:
-  THREAD_ID=$(gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO_NAME>") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100) { nodes { id comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == <COMMENT_ID>) | .id')
+Derive owner and repo name from <REPO> (which is in "owner/name" format), then query the thread ID by matching the comment's database ID:
+  OWNER=$(echo "<REPO>" | cut -d/ -f1)
+  REPO_NAME=$(echo "<REPO>" | cut -d/ -f2)
+  THREAD_ID=$(gh api graphql -f query='{ repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100) { nodes { id comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == <COMMENT_ID>) | .id')
 
-Then resolve it:
-  gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "'"$THREAD_ID"'"}) { thread { isResolved } } }'
+Then resolve it (only if THREAD_ID is non-empty):
+  if [ -n "$THREAD_ID" ]; then
+    gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "'"$THREAD_ID"'"}) { thread { isResolved } } }'
+  fi
 
-Do this for every comment that was replied to (fix, dismiss, or defer). If the thread is already resolved, the mutation is a no-op — safe to call unconditionally.
+Do this for every comment that was replied to (fix, dismiss, or defer). If the thread is already resolved, the mutation is a no-op. If the lookup returns no match (e.g., the comment was deleted), the guard skips the resolve call.
 ```
 
 7. Then immediately run the first check now without waiting for the first cron fire.
