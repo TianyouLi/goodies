@@ -59,18 +59,30 @@ If the count is 0, no Copilot review has been submitted yet. Report "No Copilot 
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
   LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
-  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
 
-Compare: `echo "$LAST_COMMIT $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review (note: Step 1 already confirmed no review is pending, so this means the review was never triggered — likely throttled). Decide:
+Get the last push time from the repo events API (the actual time GitHub received the push — not `committer.date`, which can be set arbitrarily via `--date`). Filter to PushEvents targeting this branch's ref:
+  BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
+  LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
 
-1. **Within 15 minutes of LAST_COMMIT:** Output nothing and stop — keep polling to give Copilot time.
+If LAST_PUSH is empty or null (events pruned or branch not found), fall back to `committer.date`:
+  if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
+    LAST_PUSH=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
+  fi
 
-2. **Over 15 minutes since LAST_COMMIT (or no review triggered after a previous force-push retry):** Attempt one force-push with lease to re-trigger the push event. Note: `git push --force-with-lease` will report "Everything up-to-date" if the remote already has the same SHA — GitHub only fires a push event when the ref actually changes. To produce a new SHA, amend the tip commit's timestamp first:
+Compare: `echo "$LAST_PUSH $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review (note: Step 1 already confirmed no review is pending, so this means the review was never triggered — likely throttled). Get GitHub's server time to measure elapsed time since push (avoids local clock skew):
+  GH_NOW=$(gh api repos/<REPO> --include 2>&1 | grep -i '^date:' | sed 's/^[Dd]ate: //' | xargs -I{} date -u -d "{}" +%Y-%m-%dT%H:%M:%SZ)
+  PUSH_AGE=$(jq -rn --arg push "$LAST_PUSH" --arg now "$GH_NOW" '($now | fromdateiso8601) - ($push | fromdateiso8601)')
+
+Decide:
+
+1. **PUSH_AGE < 900 (within 15 minutes):** Output nothing and stop — keep polling to give Copilot time.
+
+2. **PUSH_AGE >= 900 (or no review triggered after a previous force-push retry):** Attempt one force-push with lease to re-trigger the push event. Note: `git push --force-with-lease` will report "Everything up-to-date" if the remote already has the same SHA — GitHub only fires a push event when the ref actually changes. To produce a new SHA, amend the tip commit's timestamp first:
 
        git commit --amend --no-edit --date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
        git push --force-with-lease
 
-   Report: "Push at <LAST_COMMIT> did not trigger a Copilot review — retrying with force-push." Then stop and keep polling. Track that a retry was attempted (e.g., compare the current HEAD SHA against the commit SHA recorded in the last review). If the next poll still finds no pending review and no new review after the force-push, report: "Copilot review appears stalled — force-push retry did not trigger a review. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data.
+   Report: "Push at <LAST_PUSH> did not trigger a Copilot review — retrying with force-push." Then stop and keep polling. Track that a retry was attempted (e.g., compare the current HEAD SHA against the commit SHA recorded in the last review). If the next poll still finds no pending review and no new review after the force-push, report: "Copilot review appears stalled — force-push retry did not trigger a review. The existing review findings still apply." and fall through to Case A/B evaluation using the most recent review data.
 
 **Case A — No pending review + no unreplied inline comments + review is fresh:**
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
@@ -142,37 +154,45 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
 
-**Before every push**, ensure sufficient time has elapsed since the last Copilot review completion:
+**Before every push**, ensure sufficient time has elapsed since the later of (last review, last push). All timestamps come from GitHub's servers to avoid local clock skew:
 
-1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback) and latest commit timestamp. Emit one value per item and compute max in shell to avoid per-page sort issues:
+1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback). Emit one value per item and compute max in shell to avoid per-page sort issues:
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
   LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
-  LAST_COMMIT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
 
-2. Determine the reference time — use whichever is later (the review or the commit). If LAST_REVIEW resolves to epoch (no review yet), fall back to LAST_COMMIT:
-  REF_TIME=$(jq -rn --arg r "$LAST_REVIEW" --arg c "$LAST_COMMIT" '[($r | fromdateiso8601), ($c | fromdateiso8601)] | max | todateiso8601')
+2. Get the last push time from the repo events API:
+  BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
+  LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
+  if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
+    LAST_PUSH=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
+  fi
 
-3. Compute seconds elapsed since the reference time:
-  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
+3. Determine the reference time — use whichever is later (review or push):
+  REF_TIME=$(jq -rn --arg r "$LAST_REVIEW" --arg p "$LAST_PUSH" '[($r | fromdateiso8601), ($p | fromdateiso8601)] | max | todateiso8601')
+
+4. Get "now" from GitHub's server clock (avoids local clock skew):
+  GH_NOW=$(gh api repos/<REPO> --include 2>&1 | grep -i '^date:' | sed 's/^[Dd]ate: //' | xargs -I{} date -u -d "{}" +%Y-%m-%dT%H:%M:%SZ)
+
+5. Compute seconds elapsed since the reference time using GitHub's clock:
+  ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$GH_NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
   REMAINING=$((300 - ELAPSED))
 
-4. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
+6. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
 
        sleep $REMAINING && git push &
        PUSH_PID=$!
 
    This keeps the conversation responsive — if the user requests additional changes during the wait, amend the pending commit before the background push fires.
 
-5. If REMAINING is 0 or negative, push immediately (foreground) and capture exit code directly:
+7. If REMAINING is 0 or negative, push immediately (foreground) and capture exit code directly:
 
        git push
        PUSH_EXIT=$?
 
-6. **Wait for push completion before replying/resolving.** Verify the push succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
+8. **Wait for push completion before replying/resolving.** Verify the push succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
 
-       # For background push (step 4):
+       # For background push (step 6):
        wait $PUSH_PID
        PUSH_EXIT=$?
 
@@ -187,7 +207,7 @@ When branch protection rules include Copilot review-on-push, rapid successive pu
 **Rules:**
 - Always batch fixes into a single commit/push (see Case B above).
 - Never push incrementally per finding.
-- Always enforce the 5-minute gap from the later of (last review, last commit). This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
+- Always enforce the 5-minute gap from the later of (last review, last push) using GitHub's server clock for "now". This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
 - Run the delay + push in the background so the assistant stays available for interaction during the wait.
 - Never reply to comments or resolve threads until the push has been verified successful.
 ```
