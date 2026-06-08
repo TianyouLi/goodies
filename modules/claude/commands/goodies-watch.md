@@ -83,6 +83,18 @@ Reply format:
 - **Fix**: "Fixed in <commit-sha>. <brief explanation of the change>."
 - **Dismiss**: "Dismissed — <reason why it doesn't apply>."
 - **Defer**: "Deferred — <reason>. Tracking in <issue-url if created>."
+
+## Resolving review threads
+
+After replying to a comment, resolve the corresponding review thread so it collapses in the GitHub UI. This requires the GraphQL thread node ID.
+
+Get the thread ID for a comment by querying the PR's review threads and matching the comment's database ID:
+  THREAD_ID=$(gh api graphql -f query='{ repository(owner: "<OWNER>", name: "<REPO_NAME>") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100) { nodes { id comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].databaseId == <COMMENT_ID>) | .id')
+
+Then resolve it:
+  gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "'"$THREAD_ID"'"}) { thread { isResolved } } }'
+
+Do this for every comment that was replied to (fix, dismiss, or defer). If the thread is already resolved, the mutation is a no-op — safe to call unconditionally.
 ```
 
 7. Then immediately run the first check now without waiting for the first cron fire.
