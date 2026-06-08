@@ -103,10 +103,21 @@ Fetch all thread IDs and their first-comment database IDs in one paginated Graph
   OWNER=$(echo "<REPO>" | cut -d/ -f1)
   REPO_NAME=$(echo "<REPO>" | cut -d/ -f2)
 
-Paginate with cursors until `hasNextPage` is false:
-  gh api graphql -f query='query($cursor: String) { repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads'
+Paginate with cursors until `hasNextPage` is false. Loop structure:
 
-Build a map of `{comment_databaseId → thread_id}` from threads where `isResolved` is false.
+```bash
+CURSOR=""
+ALL_THREADS="[]"
+while true; do
+  RESULT=$(gh api graphql -f query='query($cursor: String) { repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: <NUMBER>) { reviewThreads(first: 100, after: '"${CURSOR:+\"$CURSOR\"}"') { pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }' --jq '.data.repository.pullRequest.reviewThreads')
+  ALL_THREADS=$(echo "$ALL_THREADS" "$RESULT" | jq -s '.[0] + ([.[1].nodes[] | select(.isResolved == false)])')
+  HAS_NEXT=$(echo "$RESULT" | jq -r '.pageInfo.hasNextPage')
+  [ "$HAS_NEXT" = "true" ] || break
+  CURSOR=$(echo "$RESULT" | jq -r '.pageInfo.endCursor')
+done
+```
+
+Build a map of `{comment_databaseId → thread_id}` from `ALL_THREADS` (already filtered to unresolved).
 
 For each replied comment, look up the thread ID from the map and resolve it:
   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<THREAD_ID>"}) { thread { isResolved } } }'
@@ -135,11 +146,24 @@ When branch protection rules include Copilot review-on-push, rapid successive pu
 
 5. If REMAINING is 0 or negative, push immediately.
 
+6. **Wait for push completion before replying/resolving.** After the background push job fires, verify it succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
+   ```bash
+   wait $!  # wait for the background push job
+   PUSH_EXIT=$?
+   if [ $PUSH_EXIT -ne 0 ]; then
+     echo "Push failed (exit $PUSH_EXIT). Aborting reply/resolve — fix the push issue first."
+     # Do NOT reply to comments or resolve threads if push failed
+     exit 1
+   fi
+   ```
+   Only proceed to reply and resolve threads after confirming the push completed successfully. This ensures commit SHAs cited in replies actually exist on the remote.
+
 **Rules:**
 - Always batch fixes into a single commit/push (see Case B above).
 - Never push incrementally per finding.
 - Always enforce the 3-minute gap from the later of (last review, last commit). This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
 - Run the delay + push in the background so the assistant stays available for interaction during the wait.
+- Never reply to comments or resolve threads until the push has been verified successful.
 ```
 
 7. Then immediately run the first check now without waiting for the first cron fire.
