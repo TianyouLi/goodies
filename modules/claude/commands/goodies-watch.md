@@ -161,7 +161,7 @@ When branch protection rules include Copilot review-on-push, pushing within ~5 m
   LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
 
-2. Get the last push time from the repo events API (actual time GitHub received the push). Fall back to the PR's `created_at` if no push event exists (events pruned or not yet indexed) — it's a GitHub-sourced timestamp that approximates when the branch first became available:
+2. Get the last push time from the repo events API (actual time GitHub received the push). Fall back to the PR's `created_at` if no push event exists (events pruned or not yet indexed) — this is when the PR was opened (typically shortly after the first push), serving as a conservative GitHub-sourced lower bound:
   BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
   LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
   if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
