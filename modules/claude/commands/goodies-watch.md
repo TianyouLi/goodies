@@ -152,9 +152,9 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 ## Push timing (throttle prevention)
 
-When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
+When branch protection rules include Copilot review-on-push, pushing within ~5 minutes of the last Copilot review or the last push (whichever is later) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
 
-**Before every push**, ensure at least 5 minutes have passed since the later of (last Copilot review, last push). All timestamps come from GitHub's servers to avoid local clock skew:
+**Before every push**, ensure at least 5 minutes have passed since the later of (last Copilot review completion, last push received by GitHub). All timestamps come from GitHub's servers to avoid local clock skew:
 
 1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback). Emit one value per item and compute max in shell to avoid per-page sort issues:
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
