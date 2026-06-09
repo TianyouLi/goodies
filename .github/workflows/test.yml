@@ -6,7 +6,74 @@ on:
   pull_request:
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      test_files: ${{ steps.filter.outputs.test_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine test files to run
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+          else
+            BASE=${{ github.event.before }}
+          fi
+
+          # If BASE is empty or all-zeros (new branch), run everything
+          if [ -z "$BASE" ] || echo "$BASE" | grep -qE '^0+$'; then
+            echo 'test_files=all' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+
+          # If test infra, install.sh, lib, or workflow changed, run all
+          if echo "$CHANGED" | grep -qE '^(tests/(run\.sh|test_helper|bats/)|install\.sh|lib/|\.github/workflows/)'; then
+            echo 'test_files=all' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Build list of affected test files
+          TEST_FILES=""
+
+          # Module source changes → corresponding module test
+          for module in $(echo "$CHANGED" | grep -oP '^modules/\K[^/]+' | sort -u); do
+            if [ -f "tests/modules/${module}.bats" ]; then
+              TEST_FILES="${TEST_FILES} tests/modules/${module}.bats"
+            fi
+          done
+
+          # Module test file changes → include that test file
+          for testfile in $(echo "$CHANGED" | grep -oP '^tests/modules/\K.*\.bats$'); do
+            if [ -f "tests/modules/${testfile}" ]; then
+              TEST_FILES="${TEST_FILES} tests/modules/${testfile}"
+            fi
+          done
+
+          # Integration or lib test changes
+          if echo "$CHANGED" | grep -qE '^tests/(integration|lib)\.bats$'; then
+            for f in $(echo "$CHANGED" | grep -oP '^tests/(integration|lib)\.bats$'); do
+              TEST_FILES="${TEST_FILES} tests/${f}"
+            done
+          fi
+
+          # Deduplicate
+          TEST_FILES=$(echo "$TEST_FILES" | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+
+          if [ -z "$TEST_FILES" ]; then
+            echo 'test_files=none' >> "$GITHUB_OUTPUT"
+          else
+            echo "test_files=${TEST_FILES}" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.test_files != 'none'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,4 +81,16 @@ jobs:
           submodules: recursive
 
       - name: Run BATS tests
-        run: bash tests/run.sh
+        run: |
+          BATS="tests/bats/bats-core/bin/bats"
+          if [ ! -x "$BATS" ]; then
+            echo "ERROR: bats not found. Run: git submodule update --init --recursive"
+            exit 1
+          fi
+
+          TEST_FILES="${{ needs.detect-changes.outputs.test_files }}"
+          if [ "$TEST_FILES" = "all" ]; then
+            bash tests/run.sh
+          else
+            $BATS $TEST_FILES
+          fi
