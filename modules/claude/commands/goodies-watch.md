@@ -64,9 +64,9 @@ Get the last push time from the repo events API (the actual time GitHub received
   BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
   LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
 
-If LAST_PUSH is empty or null (events pruned or branch not found), fall back to `committer.date`:
+If LAST_PUSH is empty or null (events pruned or not yet indexed), fall back to the PR's `created_at` (GitHub-sourced timestamp, avoids local clock skew from `committer.date`):
   if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
-    LAST_PUSH=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
+    LAST_PUSH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.created_at')
   fi
 
 Compare: `echo "$LAST_PUSH $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdateiso8601) > (.[1] | fromdateiso8601)'`. If the result is `true`, the branch has been updated since the last review (note: Step 1 already confirmed no review is pending, so this means the review was never triggered — likely throttled). Get GitHub's server time to measure elapsed time since push (avoids local clock skew):
