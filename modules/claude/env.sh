@@ -1,6 +1,19 @@
 #!/bin/bash
 # Claude Code environment — sourced via ~/.bashrc.d/
 
+if alias claude &>/dev/null; then
+    if [[ -t 0 && -t 1 ]]; then
+        echo "Warning: 'claude' is already defined as an alias: $(alias claude)" >&2
+        read -rp "Override with goodies claude wrapper function? [Y/n] " _reply || _reply=""
+        if [[ "$_reply" =~ ^[Nn] ]]; then
+            unset _reply
+            return 0 2>/dev/null || exit 0
+        fi
+        unset _reply
+    fi
+    unalias claude
+fi
+
 claude() {
     local token_file="$HOME/.claude_bedrock_token"
     if [ ! -f "$token_file" ] || [ ! -s "$token_file" ]; then
