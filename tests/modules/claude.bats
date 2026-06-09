@@ -63,3 +63,123 @@ teardown() {
     [ ! -L "$HOME/.claude/settings.json" ]
     grep -q '"custom"' "$HOME/.claude/settings.json"
 }
+
+@test "claude module installs env.sh symlink to bashrc.d" {
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    [ -L "$HOME/.bashrc.d/claude.sh" ]
+    [ "$(readlink "$HOME/.bashrc.d/claude.sh")" = "$GOODIES_ROOT/modules/claude/env.sh" ]
+}
+
+# --- env.sh tests ---
+
+@test "env.sh defines claude function when no alias exists" {
+    run bash -c 'source "$GOODIES_ROOT/modules/claude/env.sh" && type -t claude'
+    assert_success
+    assert_output "function"
+}
+
+@test "env.sh claude function fails when token file missing" {
+    run bash -c 'source "$GOODIES_ROOT/modules/claude/env.sh" && claude --version 2>&1'
+    assert_failure
+    assert_output --partial "not found or empty"
+}
+
+@test "env.sh claude function fails when token file is empty" {
+    touch "$HOME/.claude_bedrock_token"
+    run bash -c 'source "$GOODIES_ROOT/modules/claude/env.sh" && claude --version 2>&1'
+    assert_failure
+    assert_output --partial "not found or empty"
+}
+
+@test "env.sh claude function sets environment variables correctly" {
+    echo "test-token-123" > "$HOME/.claude_bedrock_token"
+    mkdir -p "$HOME/bin"
+    cat > "$HOME/bin/claude" <<'FAKE'
+#!/bin/bash
+echo "REGION=$AWS_REGION"
+echo "BEDROCK=$CLAUDE_CODE_USE_BEDROCK"
+echo "TOKEN=$AWS_BEARER_TOKEN_BEDROCK"
+FAKE
+    chmod +x "$HOME/bin/claude"
+    run bash -c '
+        export PATH="$HOME/bin:$PATH"
+        source "$GOODIES_ROOT/modules/claude/env.sh"
+        claude
+    '
+    assert_success
+    assert_line "REGION=us-east-2"
+    assert_line "BEDROCK=1"
+    assert_line "TOKEN=test-token-123"
+}
+
+@test "env.sh strips trailing newline from token" {
+    printf "my-token\n" > "$HOME/.claude_bedrock_token"
+    mkdir -p "$HOME/bin"
+    cat > "$HOME/bin/claude" <<'FAKE'
+#!/bin/bash
+printf "TOKEN=%s\n" "$AWS_BEARER_TOKEN_BEDROCK"
+FAKE
+    chmod +x "$HOME/bin/claude"
+    run bash -c '
+        export PATH="$HOME/bin:$PATH"
+        source "$GOODIES_ROOT/modules/claude/env.sh"
+        claude
+    '
+    assert_success
+    assert_output "TOKEN=my-token"
+}
+
+@test "env.sh overrides alias silently in non-interactive shell" {
+    run bash -c '
+        alias claude="echo old-alias"
+        source "$GOODIES_ROOT/modules/claude/env.sh"
+        type -t claude
+    '
+    assert_success
+    assert_output "function"
+}
+
+@test "env.sh removes alias when overriding" {
+    run bash -c '
+        shopt -s expand_aliases
+        alias claude="echo old-alias"
+        source "$GOODIES_ROOT/modules/claude/env.sh"
+        alias claude 2>&1
+    '
+    assert_failure
+}
+
+@test "env.sh does not prompt in non-interactive shell (no TTY)" {
+    run bash -c '
+        alias claude="echo old-alias"
+        source "$GOODIES_ROOT/modules/claude/env.sh" 2>&1
+    '
+    assert_success
+    refute_output --partial "Override with goodies"
+}
+
+@test "env.sh interactive prompt defaults to override on empty input" {
+    run bash -c '
+        echo "" | bash -c '\''
+            shopt -s expand_aliases
+            alias claude="echo old"
+            source <(sed "s/\[\[ -t 0 && -t 1 \]\]/true/" "$GOODIES_ROOT/modules/claude/env.sh") 2>/dev/null
+            type -t claude
+        '\''
+    '
+    assert_success
+    assert_output "function"
+}
+
+@test "env.sh interactive prompt skips function on N input" {
+    run bash -c '
+        echo "n" | bash -c '\''
+            shopt -s expand_aliases
+            alias claude="echo old"
+            source <(sed "s/\[\[ -t 0 && -t 1 \]\]/true/" "$GOODIES_ROOT/modules/claude/env.sh") 2>/dev/null
+            type -t claude 2>/dev/null || echo "not-defined"
+        '\''
+    '
+    assert_success
+    assert_output "alias"
+}
