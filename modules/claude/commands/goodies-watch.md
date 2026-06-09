@@ -152,20 +152,20 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 ## Push timing (throttle prevention)
 
-When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
+When branch protection rules include Copilot review-on-push, pushing within ~5 minutes of the last Copilot review or the last push (whichever is later) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
 
-**Before every push**, ensure sufficient time has elapsed since the later of (last review, last push). All timestamps come from GitHub's servers to avoid local clock skew:
+**Before every push**, ensure at least 5 minutes have passed since the later of (last Copilot review completion, last push received by GitHub). All timestamps come from GitHub's servers to avoid local clock skew:
 
 1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback). Emit one value per item and compute max in shell to avoid per-page sort issues:
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
   LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
 
-2. Get the last push time from the repo events API:
+2. Get the last push time from the repo events API (actual time GitHub received the push). Fall back to the PR's `created_at` if no push event exists (events pruned or not yet indexed) — this is when the PR was opened (typically shortly after the first push), serving as a conservative GitHub-sourced lower bound:
   BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
   LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
   if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
-    LAST_PUSH=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
+    LAST_PUSH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.created_at')
   fi
 
 3. Determine the reference time — use whichever is later (review or push):
