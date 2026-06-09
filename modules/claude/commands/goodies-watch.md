@@ -77,7 +77,18 @@ Decide:
 
 1. **PUSH_AGE < 900 (within 15 minutes):** Output nothing and stop — keep polling to give Copilot time.
 
-2. **PUSH_AGE >= 900 (or no review triggered after a previous force-push retry):** Attempt one force-push with lease to re-trigger the push event. Note: `git push --force-with-lease` will report "Everything up-to-date" if the remote already has the same SHA — GitHub only fires a push event when the ref actually changes. To produce a new SHA, amend the tip commit's timestamp first:
+2. **PUSH_AGE >= 900 (or no review triggered after a previous force-push retry):** Attempt one force-push with lease to re-trigger the push event. Note: `git push --force-with-lease` will report "Everything up-to-date" if the remote already has the same SHA — GitHub only fires a push event when the ref actually changes. To produce a new SHA, amend the tip commit's timestamp first.
+
+   **Safety check:** Before amending and force-pushing, verify the remote branch hasn't diverged (prevents overwriting other contributors' commits). Only abort when the remote contains commits not reachable from HEAD (i.e., true divergence — not simply being behind):
+
+       git fetch origin $BRANCH
+       if ! git merge-base --is-ancestor origin/$BRANCH HEAD; then
+         echo "Remote branch has diverged — aborting force-push to avoid overwriting others' commits. Please rebase first."
+         # Stop and keep polling. Do NOT force-push or amend.
+         return
+       fi
+
+   If the check passes, proceed:
 
        git commit --amend --no-edit --date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
        git push --force-with-lease
@@ -88,7 +99,16 @@ Decide:
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
 1. Delete this cron job.
 2. Check if there are multiple commits on the branch ahead of the base branch. If only one commit exists, there is nothing to squash or force-push — just report LGTM and stop.
-3. If multiple commits exist: squash all commits on the current branch into a single commit. Use the PR title as the commit message subject and include a body summarizing the changes. Preserve any `Co-Authored-By` trailers from the squashed commits. Add a `Reviewed-by: copilot-pull-request-reviewer <copilot-pull-request-reviewer@github.com>` trailer. Force-push with lease.
+3. If multiple commits exist: first verify the remote branch hasn't diverged (prevents overwriting other contributors' commits). Only abort when the remote contains commits not reachable from HEAD (i.e., true divergence — not simply being behind):
+
+       git fetch origin $BRANCH
+       if ! git merge-base --is-ancestor origin/$BRANCH HEAD; then
+         echo "Remote branch has diverged — aborting squash to avoid overwriting others' commits. Please rebase first."
+         # Do NOT squash or force-push. Report the divergence and stop.
+         return
+       fi
+
+   If the check passes, squash all commits on the current branch into a single commit. Use the PR title as the commit message subject and include a body summarizing the changes. Preserve any `Co-Authored-By` trailers from the squashed commits. Add a `Reviewed-by: copilot-pull-request-reviewer <copilot-pull-request-reviewer@github.com>` trailer. Force-push with lease.
 4. Report the result. The user can re-run `/goodies-watch` to start a new watch cycle after pushing further changes.
 
 **Case B — No pending review + unreplied inline comments exist:**
