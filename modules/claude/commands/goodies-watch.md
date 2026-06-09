@@ -154,45 +154,35 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 When branch protection rules include Copilot review-on-push, rapid successive pushes (within ~5 minutes of each other) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
 
-**Before every push**, ensure sufficient time has elapsed since the later of (last review, last push). All timestamps come from GitHub's servers to avoid local clock skew:
+**Before every push**, ensure at least 5 minutes have passed since the last Copilot review completion. Both timestamps come from GitHub's servers to avoid local clock skew:
 
 1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback). Emit one value per item and compute max in shell to avoid per-page sort issues:
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
   LAST_REVIEW_SUBMITTED=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null) | .submitted_at' | sort | tail -n 1)
   LAST_REVIEW=$(jq -rn --arg c "${LAST_COMMENT:-1970-01-01T00:00:00Z}" --arg r "${LAST_REVIEW_SUBMITTED:-1970-01-01T00:00:00Z}" '[($c | fromdateiso8601), ($r | fromdateiso8601)] | max | todateiso8601')
 
-2. Get the last push time from the repo events API:
-  BRANCH=$(gh api repos/<REPO>/pulls/<NUMBER> --jq '.head.ref')
-  LAST_PUSH=$(gh api --paginate repos/<REPO>/events --jq '.[] | select(.type == "PushEvent" and .payload.ref == "refs/heads/'"$BRANCH"'") | .created_at' | head -n 1)
-  if [ -z "$LAST_PUSH" ] || [ "$LAST_PUSH" = "null" ]; then
-    LAST_PUSH=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/commits --jq '.[].commit.committer.date' | sort | tail -n 1)
-  fi
-
-3. Determine the reference time — use whichever is later (review or push):
-  REF_TIME=$(jq -rn --arg r "$LAST_REVIEW" --arg p "$LAST_PUSH" '[($r | fromdateiso8601), ($p | fromdateiso8601)] | max | todateiso8601')
-
-4. Get "now" from GitHub's server clock (avoids local clock skew):
+2. Get "now" from GitHub's server clock (avoids local clock skew):
   GH_NOW=$(gh api repos/<REPO> --include 2>&1 | grep -i '^date:' | sed 's/^[Dd]ate: //' | xargs -I{} date -u -d "{}" +%Y-%m-%dT%H:%M:%SZ)
 
-5. Compute seconds elapsed since the reference time using GitHub's clock:
-  ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$GH_NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
+3. Compute seconds elapsed since the last review using GitHub's clock:
+  ELAPSED=$(jq -rn --arg ref "$LAST_REVIEW" --arg now "$GH_NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
   REMAINING=$((300 - ELAPSED))
 
-6. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
+4. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
 
        sleep $REMAINING && git push &
        PUSH_PID=$!
 
    This keeps the conversation responsive — if the user requests additional changes during the wait, amend the pending commit before the background push fires.
 
-7. If REMAINING is 0 or negative, push immediately (foreground) and capture exit code directly:
+5. If REMAINING is 0 or negative, push immediately (foreground) and capture exit code directly:
 
        git push
        PUSH_EXIT=$?
 
-8. **Wait for push completion before replying/resolving.** Verify the push succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
+6. **Wait for push completion before replying/resolving.** Verify the push succeeded before proceeding to the "Replying to comments" and "Resolving review threads" steps:
 
-       # For background push (step 6):
+       # For background push (step 4):
        wait $PUSH_PID
        PUSH_EXIT=$?
 
@@ -207,7 +197,7 @@ When branch protection rules include Copilot review-on-push, rapid successive pu
 **Rules:**
 - Always batch fixes into a single commit/push (see Case B above).
 - Never push incrementally per finding.
-- Always enforce the 5-minute gap from the later of (last review, last push) using GitHub's server clock for "now". This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
+- Always enforce the 5-minute gap from the last Copilot review completion (using GitHub's server clock for "now"). This ensures the push doesn't land in Copilot's throttle window.
 - Run the delay + push in the background so the assistant stays available for interaction during the wait.
 - Never reply to comments or resolve threads until the push has been verified successful.
 ```
