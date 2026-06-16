@@ -311,15 +311,14 @@
 
     // === Find the request-review button + read Copilot state ================
     function findCopilotReviewerRow() {
-        // Walk all elements; find one whose text mentions "copilot" and
-        // is small-ish (a single reviewer row in the sidebar, not the
-        // whole page). Returns the most-specific (deepest, smallest)
-        // ancestor that contains both "copilot" and a request-review
-        // button candidate.
-        //
-        // We don't try to be clever about specific reviewer-row classes
-        // because GitHub's class names churn. The visible-text + small-
-        // subtree heuristic is more durable.
+        // Iterate buttons / role-button anchors / summary elements whose
+        // visible text matches a request-review marker. For the first
+        // such match, walk up to 6 ancestors looking for the literal
+        // "copilot" substring; return the first match. We do NOT score
+        // ancestors by depth or subtree size — the first ancestor that
+        // mentions "copilot" wins. The heuristic relies on visible text
+        // proximity rather than specific class names because GitHub's
+        // class names churn.
 
         const candidates = Array.from(
             document.querySelectorAll('button, a[role="button"], summary')
@@ -420,8 +419,14 @@
 
     function maybeRequestCopilotReview(reason) {
         // Cross-tab lock check — sibling tab beat us to it.
+        // CRITICAL: only skip when the lock was written by a *different*
+        // tab. Skipping on our own lock would mean: this tab clicks at
+        // T=0 → writeLock('clicked') → second push lands at T=10s within
+        // the 30s TTL → readLock() returns our own entry → this tab
+        // skips, missing a legitimate re-trigger. The lock's purpose is
+        // to deduplicate ACROSS tabs, never to suppress within-tab.
         const lock = readLock();
-        if (lock) {
+        if (lock && lock.tabId !== TAB_ID) {
             log('cross-tab lock present (' + lock.action + ' by ' + lock.tabId + '); skipping (reason was: ' + reason + ')');
             appendLog('click-skipped-locked', {reason, locked_by: lock.tabId, locked_action: lock.action});
             return;
@@ -964,7 +969,23 @@
                 }
             }
         });
-        observer.observe(target, {childList: true, subtree: true});
+        // findTimelineNode() returns {node, selector}; observe() needs the
+        // Node. Passing the wrapper object throws synchronously and
+        // silently disables push detection (observed in manual testing
+        // before the fix: the log would stop at script-loaded).
+        // Wrap in try/catch so any future shape-change here surfaces as
+        // red status + an `error` log entry, instead of breaking init
+        // silently — the dot was green when push-detection was actually
+        // dead because observe() threw before any state-setting code ran.
+        try {
+            observer.observe(target.node, {childList: true, subtree: true});
+        } catch (e) {
+            warn('failed to attach timeline observer:', e);
+            appendLog('error', {message: String(e && e.message || e), where: 'startTimelineObserver'});
+            setTabStatus('red', 'observer-attach-failed',
+                'MutationObserver.observe() threw — push detection dead');
+            return null;
+        }
         return observer;
     }
 
