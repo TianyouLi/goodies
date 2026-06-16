@@ -390,3 +390,52 @@
   :ensure t)
 (load-theme 'zenburn t)
 
+
+;; ------------------------------------------
+;; Claude Code integration (claude-code.el)
+;; ------------------------------------------
+;; https://github.com/stevemolitor/claude-code.el
+;;
+;; Requires Emacs 30.0+. Older Emacs silently skips this block so the rest of
+;; the config still loads cleanly.
+;;
+;; Prefix is C-c c (canonical from upstream). Common bindings the package
+;; provides on its command map:
+;;
+;;   C-c c c   claude-code           — start in project root
+;;   C-c c d   claude-code-start-in-directory
+;;   C-c c r   claude-code-send-region (or full buffer if no selection)
+;;   C-c c s   claude-code-send-command (minibuffer prompt)
+;;   C-c c x   claude-code-send-command-with-context  (adds file:line)
+;;   C-c c b   claude-code-switch-to-buffer
+;;   C-c c t   claude-code-toggle    — show/hide the Claude window
+;;   C-c c k   claude-code-kill
+;;   C-c c m   claude-code-transient — full menu of commands
+;;   C-c c y/n claude-code-send-return / send-escape  — quick yes/no
+;;
+;; Default terminal backend is `eat` (pure Elisp, no native compile). To switch
+;; to vterm or ghostel, customize `claude-code-terminal-backend' after this
+;; block — see the README.
+(when (and (>= emacs-major-version 30)
+           (executable-find "claude"))
+  ;; inheritenv is a required dependency of claude-code.el; ships via :vc.
+  (use-package inheritenv
+    :vc (:url "https://github.com/purcell/inheritenv" :rev :newest))
+
+  ;; eat is the default terminal backend; pure Elisp, no native compile.
+  ;; NonGNU ELPA needs to be in the archive list for non-:vc installs.
+  (unless (assoc "nongnu" package-archives)
+    (add-to-list 'package-archives
+                 '("nongnu" . "https://elpa.nongnu.org/nongnu/") t))
+  (use-package eat :ensure t)
+
+  ;; claude-code.el itself is not on MELPA — install via :vc.
+  (use-package claude-code
+    :vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest)
+    :bind-keymap ("C-c c" . claude-code-command-map)
+    :config
+    ;; Pass a positive arg so reloading this file (e.g. M-x eval-buffer
+    ;; during debugging) doesn't toggle the mode off on the second load —
+    ;; minor-mode functions toggle when called with no argument.
+    (claude-code-mode 1)))
+

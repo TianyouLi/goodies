@@ -29,3 +29,14 @@ teardown() {
     [ ! -L "$HOME/.emacs" ]
     [ "$(cat "$HOME/.emacs")" = "custom emacs config" ]
 }
+
+@test ".emacs contains claude-code.el integration block" {
+    # Guards against accidental removal of the Claude Code integration.
+    # The block is gated on (>= emacs-major-version 30) so older Emacs
+    # silently skips it; the assertion is on the source-of-truth file.
+    # Use grep -F (fixed strings) so '.' in "claude-code.el" matches a
+    # literal dot rather than any character.
+    grep -qF "claude-code.el" "$GOODIES_ROOT/modules/emacs/.emacs"
+    grep -qF "use-package claude-code" "$GOODIES_ROOT/modules/emacs/.emacs"
+    grep -qF "claude-code-command-map" "$GOODIES_ROOT/modules/emacs/.emacs"
+}
