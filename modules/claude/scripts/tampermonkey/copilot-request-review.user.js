@@ -144,7 +144,12 @@
             if (!raw) return [];
             const parsed = JSON.parse(raw);
             return Array.isArray(parsed) ? parsed : [];
-        } catch (_) {
+        } catch (e) {
+            // Don't call logCaught/appendLog here — readLogRaw runs
+            // INSIDE appendLog's own write path, so logging the failure
+            // would recurse. Use plain console.warn (which never reads
+            // or writes localStorage) and return safely.
+            warn('readLogRaw failed (corrupt JSON or storage blocked):', e);
             return [];
         }
     }
@@ -169,6 +174,10 @@
             const trimmed = buf.slice(start);
             localStorage.setItem(LOG_KEY, JSON.stringify(trimmed));
             // Notify the per-tab panel so it can refresh its log view.
+            // We CANNOT use logCaught here — appendLog calling itself on
+            // panel-callback failure would recurse. The callback's own
+            // body is responsible for handling its errors; we just
+            // protect the action-log write path from a callback throw.
             if (panelLogCallback) {
                 try { panelLogCallback(entry); } catch (_) { /* never break main path */ }
             }
@@ -176,6 +185,20 @@
             // Logging failure must never break the main action path.
             warn('appendLog failed (storage full or disabled?):', e);
         }
+    }
+
+    // Capture an exception at the call site: warn to DevTools console
+    // AND append an `error` entry to the action log so it lands in the
+    // user's "Copy log" output. Never call this from inside readLogRaw
+    // or from the catch in appendLog itself — both run as part of the
+    // log-write path and would recurse.
+    function logCaught(where, e, extra) {
+        const detail = Object.assign(
+            {where, message: String(e && e.message || e)},
+            extra || {}
+        );
+        warn(where + ' caught:', e);
+        try { appendLog('error', detail); } catch (_) { /* never recurse */ }
     }
 
     // Known event kinds (for documentation; not enforced at runtime):
@@ -216,8 +239,10 @@
         });
     } catch (_) {
         // If `window.__goodiesActionLog` already exists from a prior
-        // load, leave it alone — last-loaded version of the script wins
-        // implicitly via the buffer, and the log function works either way.
+        // load (Tampermonkey may inject the script multiple times under
+        // some configurations), leave it alone — last-loaded version of
+        // the script wins implicitly via the buffer, and the log
+        // function works either way. Benign — intentionally not logged.
     }
 
     // === Strict scope: hostname + path guards ===============================
@@ -248,6 +273,11 @@
             return 'tab-' + Math.random().toString(36).slice(2, 10) +
                    '-' + Date.now().toString(36);
         } catch (e) {
+            // Should not happen — Math.random/Date.now are universally
+            // available. If it does, log so we know the host environment
+            // is somehow degraded; the fallback ID still lets the script
+            // run, just without per-tab uniqueness.
+            warn('TAB_ID generation failed; using fallback:', e);
             return 'tab-fallback';
         }
     })();
@@ -271,12 +301,19 @@
             const parsed = JSON.parse(raw);
             if (Date.now() - (parsed.at || 0) > CROSS_TAB_LOCK_TTL_MS) {
                 // Stale; clean up so localStorage doesn't accumulate one
-                // entry per PR visited over time.
+                // entry per PR visited over time. Best-effort second-
+                // order cleanup — if removeItem fails we still return
+                // null below, so the user-visible behavior is correct;
+                // logging this would be noise.
                 try { localStorage.removeItem(key); } catch (_) {}
                 return null;
             }
             return parsed;
         } catch (e) {
+            // Lock JSON corrupted or storage access denied. Returning
+            // null (no lock) is safe but means we may double-act. Log
+            // so the cause is visible in Copy log.
+            logCaught('readLock', e, {key});
             return null;
         }
     }
@@ -289,23 +326,30 @@
             localStorage.setItem(key, value);
             log('cross-tab lock written:', action);
         } catch (e) {
-            warn('failed to write cross-tab lock (storage full or disabled?):', e);
+            // Lock-write failure means cross-tab dedup is broken for
+            // this round (sibling tabs won't see our action). Logging
+            // the failure makes the cause visible in Copy log.
+            logCaught('writeLock', e, {key, action});
         }
     }
 
     // Listen for sibling tabs writing the lock — cancel any pending
     // observation window because they handled it.
-    window.addEventListener('storage', (e) => {
-        if (e.key !== lockKey() || !e.newValue) return;
+    window.addEventListener('storage', (ev) => {
+        if (ev.key !== lockKey() || !ev.newValue) return;
         try {
-            const parsed = JSON.parse(e.newValue);
+            const parsed = JSON.parse(ev.newValue);
             if (parsed.tabId === TAB_ID) return;  // our own write
             log('sibling tab acted on this PR (' + parsed.action + '); cancelling local observation');
             appendLog('sibling-tab-acted', {by_tab: parsed.tabId, action: parsed.action});
             cancelPendingObservation();
             flashIndicator(`Another tab handled this (${parsed.action})`, 'gray');
-        } catch (_) {
-            // ignore
+        } catch (e) {
+            // Sibling wrote malformed JSON, or one of our handlers
+            // (cancelPendingObservation / flashIndicator) threw. Log so
+            // the cause is visible — silently swallowing this once
+            // produced an unexplained "no toast on sibling action".
+            logCaught('storage-listener', e, {newValue_excerpt: String(ev.newValue).slice(0, 80)});
         }
     });
 
@@ -555,7 +599,10 @@
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         } catch (e) {
-            warn('toast failed (script still ran):', e);
+            // Toast is the only visible feedback when the panel is
+            // closed; a silent failure here makes the script feel dead.
+            // Log so the cause shows up in Copy log.
+            logCaught('flashIndicator', e, {message});
         }
     }
 
@@ -863,7 +910,7 @@
         try {
             await navigator.clipboard.writeText(text);
             ok = true;
-        } catch (e) {
+        } catch (eClipboard) {
             // Clipboard API can fail in older browsers, when the page
             // isn't focused, or under restrictive permission policies.
             // Fall back to the legacy textarea + execCommand approach.
@@ -879,7 +926,15 @@
                 ta.select();
                 ok = document.execCommand('copy');
                 ta.remove();
-            } catch (_) { ok = false; }
+            } catch (eFallback) {
+                // Both clipboard paths failed. Log both causes so the
+                // user can paste the action log into a bug report and
+                // we can see why "Copy failed" appeared on the button.
+                logCaught('copyTabLog', eFallback, {
+                    primary_message: String(eClipboard && eClipboard.message || eClipboard),
+                });
+                ok = false;
+            }
         }
         const orig = btn.textContent;
         btn.textContent = ok ? 'Copied!' : 'Copy failed';
@@ -897,7 +952,12 @@
             const buf = readLogRaw();
             const remaining = buf.filter(e => e.tab_id !== TAB_ID);
             localStorage.setItem(LOG_KEY, JSON.stringify(remaining));
-        } catch (_) {}
+        } catch (e) {
+            // Silently failing to clear is confusing UX (user clicks
+            // Clear log, list doesn't shrink, no explanation). Log so
+            // the cause shows up in the next Copy log output.
+            logCaught('clearTabLog', e);
+        }
         refreshPanelLog();
     }
 
