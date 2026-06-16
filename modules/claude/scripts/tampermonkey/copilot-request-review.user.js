@@ -135,8 +135,8 @@
     // === Action log: persistent ring buffer ================================
     // Forward declaration: the per-tab status panel registers a callback
     // here so it can refresh its log view on every appendLog. Declared
-    // before appendLog (var so it's hoisted and definitely not in TDZ).
-    var panelLogCallback = null;
+    // before appendLog so it's defined by the time any code runs.
+    let panelLogCallback = null;
 
     function readLogRaw() {
         try {
@@ -936,6 +936,10 @@
     }
 
     let pushDebounceTimer = null;
+    function firePushDebounced() {
+        pushDebounceTimer = null;
+        maybeRequestCopilotReview('push detected in timeline');
+    }
     function onMaybePushDetected(addedNodes) {
         for (const node of addedNodes) {
             if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
@@ -950,10 +954,7 @@
                 // truncate hard so we don't store the whole timeline node.
                 const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 80);
                 appendLog('push-detected', {regex: String(matched), snippet});
-                pushDebounceTimer = setTimeout(() => {
-                    pushDebounceTimer = null;
-                    maybeRequestCopilotReview('push detected in timeline');
-                }, PUSH_DEBOUNCE_MS);
+                pushDebounceTimer = setTimeout(firePushDebounced, PUSH_DEBOUNCE_MS);
                 return;
             }
         }
