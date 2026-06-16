@@ -1,3 +1,65 @@
+# Claude module — overview
+
+This module ships claude-related tooling that the goodies installer
+(`bash install.sh claude`) symlinks into your home directory. Beyond the
+core token-refresh setup (the original purpose of this module), it now
+hosts a small library of slash commands, snippet conventions, and
+browser-side userscripts that work together.
+
+## Layout
+
+```
+modules/claude/
+├── claude-refresh-token        # token-refresh CLI (installed to ~/.local/bin)
+├── env.sh                      # claude shell function (sourced by ~/.bashrc.d)
+├── settings.json               # ~/.claude/settings.json
+├── commands/                   # slash commands for Claude Code
+│   ├── goodies-watch.md        # poll a PR for Copilot reviews; surface findings
+│   ├── goodies-distill.md      # scan recent sessions for portable solutions
+│   ├── goodies-bkm.md          # append convention snippets to project CLAUDE.md
+│   └── goodies-review.md       # human-expert PR collaboration (5-layer review) [PR #37]
+├── snippets/                   # convention snippets used by goodies-bkm + goodies-review
+│   ├── branch-naming.md
+│   ├── conventional-commits.md
+│   ├── copilot-review-workflow.md
+│   ├── copilot-ruleset.md
+│   ├── pr-checklist.md
+│   └── pr-description.md
+└── scripts/                    # external-tool helpers (browser, etc.)
+    └── tampermonkey/           # browser-side userscripts (NOT installed by install.sh)
+        └── copilot-request-review.user.js
+```
+
+`install.sh` symlinks the filesystem assets — env.sh into
+`~/.bashrc.d/`, the claude-refresh-token CLI into `~/.local/bin/`, the
+settings.json + commands/ + snippets/ into `~/.claude/`. The
+**scripts/tampermonkey/** subdirectory is intentionally excluded: those
+files are installed via the Tampermonkey browser extension's UI, not via
+filesystem symlinks. See `scripts/tampermonkey/README.md` for the install
+flow.
+
+## How the assets relate
+
+This is a small library of cooperating tools, not a single feature.
+Knowing which asset depends on (or complements) which is the navigation
+aid:
+
+| Asset | Depends on | Complements |
+|---|---|---|
+| `env.sh` (claude function) | `~/.claude_bedrock_token` (managed by claude-refresh-token) | none |
+| `claude-refresh-token` | (standalone) | `env.sh` (writes the file env.sh reads) |
+| `commands/goodies-distill.md` | session transcripts under `~/.claude/projects/` | none |
+| `commands/goodies-bkm.md` | `snippets/*.md` (the snippet corpus) | none |
+| `commands/goodies-review.md` | `snippets/copilot-review-workflow.md`, `snippets/pr-checklist.md` (when grounding) | `scripts/tampermonkey/copilot-request-review.user.js` (removes the manual click for re-review) |
+| `commands/goodies-watch.md` | `gh` CLI authenticated | `scripts/tampermonkey/copilot-request-review.user.js` (with the userscript installed, the watcher's force-push retry rule becomes unnecessary; see project_tampermonkey_copilot_trigger memory) |
+| `scripts/tampermonkey/copilot-request-review.user.js` | Tampermonkey browser extension | `goodies-watch`, `goodies-review` (both benefit when Copilot review fires reliably on push) |
+
+The userscript is the only asset that lives outside the filesystem-managed
+install flow. When in doubt: filesystem assets → `install.sh` symlinks
+them; browser assets → install via the extension's UI.
+
+---
+
 # Claude Code Token Refresh Without Re-sourcing
 
 **Problem:** Every time the AWS bearer token expires (~weekly), you have to update `.bashrc` and `source ~/.bashrc` in every open terminal.
