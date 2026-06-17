@@ -69,6 +69,33 @@ teardown() {
     grep -qF "confidence:" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
 }
 
+@test "goodies-review per-layer guidance files exist and are wired into --engage" {
+    # --engage loads pattern guidance from goodies-review/layers/<layer>.md at
+    # runtime. Guard both halves of that dependency so a future rename/move of
+    # the files (or the path logic) can't silently break the engagement step:
+    #   1. all five layer files are present
+    #   2. the command markdown still references the layers/<layer>.md path
+    local layers_dir="$GOODIES_ROOT/modules/claude/commands/goodies-review/layers"
+    for layer in problem direction design tradeoff implementation; do
+        [ -f "$layers_dir/$layer.md" ]
+    done
+    grep -qF 'goodies-review/layers/<layer>.md' "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+}
+
+@test "goodies-review layer docs link to references.md and the file exists" {
+    # Each layer doc cites sources with [n] markers that resolve against the
+    # shared references.md (which is NOT loaded at runtime). Guard the file's
+    # existence and that every layer back-links to its section, so a rename of
+    # references.md doesn't leave dangling citation links.
+    local review_dir="$GOODIES_ROOT/modules/claude/commands/goodies-review"
+    [ -f "$review_dir/references.md" ]
+    for layer in problem direction design tradeoff implementation; do
+        grep -qF "../references.md#${layer}-layer" "$review_dir/layers/$layer.md"
+        # references.md must contain the section heading the link targets
+        grep -qiF "## ${layer} layer" "$review_dir/references.md"
+    done
+}
+
 @test "goodies-review design doc declares 5-layer hierarchy" {
     # Guard the design doc separately from the command markdown so a failure
     # makes it obvious which file regressed.
