@@ -370,14 +370,54 @@ The hierarchy suggests settling lower layers first. Confirm to proceed (y/n)?
 
 If user types anything other than 'y' or 'yes', stop. Otherwise continue.
 
+**Load the layer's pattern guidance.** Each layer has a companion file of
+named patterns + anti-patterns that grounds the engagement — so drafted
+replies cite recognized practice rather than ad-hoc opinion, and recurring
+anti-patterns get named instead of re-litigated each time. The files live
+alongside this command in the goodies repo; resolve the path through this
+command's own symlink so it works regardless of where goodies is checked
+out:
+
+```bash
+# Whitelist the layer name first: it comes from user input (--layer), and is
+# about to be interpolated into a file path. Only the five known layers are
+# valid; anything else fails fast and can never reach the path (blocks
+# traversal like --layer ../../../etc/passwd).
+case "<layer>" in
+  problem|direction|design|tradeoff|implementation) ;;
+  *) echo "unknown layer '<layer>' (expected: problem|direction|design|tradeoff|implementation)"; exit 1 ;;
+esac
+CMD_REAL=$(python3 -c "import os; print(os.path.realpath(os.path.expanduser('~/.claude/commands/goodies-review.md')))")
+LAYER_FILE="$(dirname "$CMD_REAL")/goodies-review/layers/<layer>.md"
+if [ -f "$LAYER_FILE" ]; then
+  cat "$LAYER_FILE"
+else
+  # Best-effort degradation: emit an explicit marker so the runtime has
+  # something concrete to surface in the statusline footer (see below),
+  # rather than silently producing empty output.
+  echo "no pattern guidance for <layer> layer (missing $LAYER_FILE)"
+fi
+```
+
+Read the file (if present) and hold its patterns + anti-patterns as
+engagement context for this layer. Best-effort: if the file is missing
+(older checkout, layer not yet authored), note "no pattern guidance for
+<layer> layer" in the statusline footer and continue — the engagement
+still works, just without named-pattern grounding.
+
 For each open or proposing thread at the engagement layer:
 
 1. Show the thread context: original comment, all replies, current state.
 2. Show the file/line if it's an inline review comment (`<path>:<line>`).
 3. Ask: "what's your position on this thread?" — open-ended; user types prose.
+   If the thread matches a named pattern or anti-pattern from the layer file
+   loaded above, surface it here: "this reads like *<pattern name>* (<layer>
+   guidance)" so the user can lean on or push back against the named practice.
 4. Drafts a reply using the user's prose, with header
    `[review-pr / <layer> / <status>]` where `<status>` is the user's claim
    (ask if unclear: "is this `proposing` a resolution, or keeping it `open`?").
+   When a layer pattern/anti-pattern applies, cite it by name in the draft so
+   the reply grounds in recognized practice rather than bare assertion.
 5. **Show the draft** and ask "post this reply (y/n/edit)?":
    - `y`: post — but the API endpoint depends on the thread's *kind*,
      which we tracked when fetching in Step 2:
