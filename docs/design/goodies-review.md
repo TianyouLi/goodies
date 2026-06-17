@@ -83,20 +83,38 @@ either an attack or a deflection. With it, a participant can say "I'm
 proposing X resolves this" and others can say "I agree" (move to `resolved`)
 or "I disagree because Y" (back to `open` with a counter).
 
-### Loose comment format (optional headers)
+### Loose comment format (optional first-line tag)
 
-Tool-emitted comments include a single bracketed header at the top:
+Tool-emitted comments lead with a single plain-language tag on the first line:
 
 ```
-[review-pr / <layer> / <status>]
+<layer> / <status> — <short headline>
 ```
 
-The header is markdown-readable, copy-paste-stable, and machine-parseable.
-Three slots:
+The tag is markdown-readable, copy-paste-stable, and machine-parseable. Slots:
 
-- `review-pr` — provenance marker (literal string).
 - `<layer>` — one of the 5 hierarchy values.
-- `<status>` — one of the 4 status values.
+- `<status>` — one of the 4 status values (the first token after `/`, before
+  any ` · ` marker — see the override variant below).
+- `<short headline>` — a plain summary in the violation + impact + what's-now
+  shape; carries no codes (see "Interactive flow → internal vs. user-facing").
+
+The meaningless `review-pr` provenance prefix used by earlier versions is
+**dropped** — the tool no longer emits it. For back-compat the parser still
+recognizes the legacy `[review-pr / <layer> / <status>]` form on read, but never
+emits it.
+
+**Override variant.** A reopen posted over a gatekeeper rejection carries an
+override marker after the status, set off by ` · `:
+
+```
+<layer> / open · override: gatekeeper rejected — <short headline>
+```
+
+A tag parser must take the status as the first token after `/` and treat
+anything after a ` · ` as an annotation, not part of the status — otherwise
+`open · override: …` looks like an invalid status and the thread fails to
+categorize/reopen.
 
 When `goodies-review` reads a PR's comment threads:
 
@@ -110,18 +128,19 @@ When `goodies-review` reads a PR's comment threads:
    content reads as implementation, surface the inconsistency rather than
    trusting the wrong metadata.
 
-Atomic comments (one layer per comment) for v1. A comment that genuinely
-spans two layers should be split. Multi-layer headers
-(`[review-pr / problem,design / open]`) are a v2 extension if the constraint
-pinches in practice.
+Atomic comments (one layer per comment) for v1 — enforced (see "Interactive
+flow → governing rule"). A comment that genuinely spans two layers is split.
+Multi-layer tags (`design,problem / open — <short headline>`) are a v2 extension
+if the constraint pinches in practice.
 
 #### Cross-layer references
 
-When a lower-layer comment depends on a settled higher-layer thread, the
-header gains a reference suffix:
+When a lower-layer comment depends on a settled higher-layer thread, a reference
+line follows the tag:
 
 ```
-[review-pr / design / open] -> ref: [problem / resolved] thread #123
+design / open — bracket-predicate grammar exceeds the v1 commitment
+-> ref: problem / resolved thread #123
 
 The Problem layer settled on "any workload-supplied predicate." This Design
 choice of bracket-syntax predicates assumes a richer grammar than the v1
@@ -174,8 +193,8 @@ thread couldn't have considered:
 
 The gatekeeper renders one of three:
 
-1. **Reason holds.** Drafts the reopen comment with header
-   `[review-pr / <layer> / open]`, includes the reason, references the prior
+1. **Reason holds.** Drafts the reopen comment tagged
+   `<layer> / open — <short headline>`, includes the reason, references the prior
    thread's resolution. Awaits confirmation before posting.
 
 2. **Reason doesn't yet hold.** Specific feedback: "your reason restates the
@@ -194,7 +213,7 @@ permission system). When they do, the posted comment carries an override
 marker visible to all participants:
 
 ```
-[review-pr / design / open * override: gatekeeper rejected]
+design / open · override: gatekeeper rejected — <short headline>
 
 The gatekeeper rejected this reopen as "restated preference," but I'm
 overriding because [reason]. Other participants are welcome to weigh in on
@@ -308,22 +327,89 @@ When the PR adds files under `docs/design/`, those are themselves treated as
 design contracts (the PR is introducing the doc; the gatekeeper grounds
 against the doc + project's existing patterns).
 
-### Modes
+### Invocation and internal routing targets
 
-| Invocation | Purpose |
-|------------|---------|
-| `/goodies-review <PR>` | Summary mode: categorize threads by layer + status; print statusline + counter row; no posting. |
-| `/goodies-review <PR> --engage [--layer <X>]` | Interactive collaboration on open threads at a layer (default: lowest layer with open threads). Walks each open thread, drafts replies on user direction, confirms before posting. |
-| `/goodies-review <PR> --reopen <thread-id>` | Gatekeeper-mediated reopen of a resolved thread. User provides reason; gatekeeper renders verdict; user confirms (and optionally overrides). |
-| `/goodies-review <PR> --new-thread --layer <X>` | Start a top-level thread at the named layer. User provides content; tool drafts with header; confirms before posting. |
+The default interface is **conversational, not a mode picker** (see "Interactive
+flow" below). The normal invocation opens the landing view; the user types a
+number or talks, and the runtime routes to one of the sub-flows. The mode flags
+still exist as *internal/optional shortcuts* into the same sub-flows — they are
+not the primary interface and are never surfaced to the user as something to
+choose.
+
+| Invocation | Behavior |
+|------------|----------|
+| `/goodies-review <PR>` | **Default — conversational landing view:** survey existing discussion (Copilot threads excluded) + proposed topics as two groups; invite a numbered pick or free prose; route from there. |
+| `/goodies-review` (no args) | Resume the last-active context and open its landing view. If none: "no active discussion yet — give me a PR to look at." |
+| `/goodies-review <PR> --engage [--layer <X>]` | Internal shortcut: jump straight to continuing open threads at a layer. |
+| `/goodies-review <PR> --reopen <thread-id>` | Internal shortcut: gatekeeper-mediated reopen of a resolved thread. |
+| `/goodies-review <PR> --new-thread [--layer <X>]` | Internal shortcut: start a new thread (with topic, or propose topics). Subject to the governing rule (no duplicate of an existing thread). |
 | `/goodies-review --list` | Show all active contexts across PRs. |
-| `/goodies-review --status` | Show statusline for the current context (no other action). |
-| `/goodies-review` (no args) | Resume the last-active context; equivalent to running `--engage` on it. |
+| `/goodies-review --status` | Show the statusline for the current context. |
 
-`<PR>` accepts:
-- A bare number (`125`) — uses the current repo (cwd's git remote).
-- A qualified form (`optibot#125` if there's an alias, or `<owner>/<repo>#<num>`).
-- A full PR URL.
+`<PR>` accepts a bare number (current repo), a qualified form (`optibot#125` or
+`<owner>/<repo>#<num>`), or a full PR URL.
+
+### Interactive flow
+
+One interaction cycle underlies every flow:
+
+> **The command supplies, the user reviews and provides input, that input forms
+> the comment/reply, and the user confirms before anything posts.** The command
+> never authors-and-posts autonomously — it proposes, the human shapes and
+> approves.
+
+**Internal vs. user-facing (the boundary).** The runtime reasons with internal
+codes — layer catalog entries (`DS5`, `AP2`, …), `[n]` citations, the mode
+targets — but translates everything to plain language before it reaches the
+screen. Catalog entries are surfaced by their meaningful title, never the code;
+the design doc and `layers/*.md` keep the codes (they are the internal scheme).
+Nothing the user sees contains a code.
+
+**Conversational, survey-first entry.** The tool is not a mode picker. A session
+opens by surveying what's already on the PR and inviting discussion. The survey
+**excludes Copilot-authored threads** (code review is Copilot's lane, not this
+tool's). The landing view shows two disjoint groups — *existing discussion* and
+*proposed topics* (doc-scan candidates) — each sorted high→low by confidence,
+with unified continuous numbering and one tight line per item (detail on pick).
+The user types a number or talks freely; the runtime infers the route (continue
+/ reopen / new topic) and states it in plain words before drafting.
+
+**Governing rule: no new thread unless really new.** Before any new top-level
+thread, the runtime checks every existing thread (open and resolved) for a
+matching `(layer, aspect)` and prefers continuing/reopening it over a duplicate.
+Proposed topics are pre-filtered to genuinely new ground, so the two landing
+groups are disjoint by construction. The companion **one-topic-per-comment**
+rule is also enforced: the runtime refuses to draft a multi-topic comment
+(splits it) and refuses to fold an off-topic aspect into a reply (holds it and
+routes it per the governing rule). An *aspect* is *(layer) + (named concern)*,
+grounded in a catalog entry internally — and explicitly **not** a code-level
+defect relabeled (those stay Copilot's).
+
+**Navigation: levels, `(n)o` is back.** The session is a level hierarchy
+(landing → item detail → draft). `(n)o` backs up one level rather than aborting;
+there is no `quit`. Confirms render as `(y)es, (n)o, (e)dit?`. Prose prompts back
+out on empty input. Unrecognized token input re-prompts once, then defaults to
+the non-mutating choice — a typo never posts or resolves.
+
+**Drafts live on disk.** Because the runtime is the LLM, an in-context draft
+would bloat a long multi-thread session. Working drafts are externalized to
+`~/.cache/goodies-review/draft-*.txt`: written on create/edit, persisted across
+a back-out so edits survive, deleted on successful post or session end. The draft
+file is the single source of truth (also covering the network-failure rescue);
+context holds a draft only while it is on screen.
+
+**Comment headers carry meaning, not jargon.** Posted comments lead with a plain
+tag `<layer> / <status> — <short headline>`, where the headline states
+*violation + impact + what's-now* compressed to one line. The meaningless
+`review-pr` prefix is dropped (legacy headers are still parsed on read).
+
+**Widget vs. text (why hybrid).** `AskUserQuestion` is used only for selection
+from a fixed set — chiefly the multi-select topic triage and optional
+disambiguation — never as the front door (the front door is the conversational
+landing view). Free-form input (positions, reasons, topics) and the simple
+confirms stay text. The tool is additive and falls back to a numbered text
+prompt when unavailable, which is why `AskUserQuestion` joins `Bash, Read, Write`
+in `allowed-tools`.
 
 ## Trade-offs
 
@@ -337,6 +423,22 @@ incremental adoption works.
 the hierarchy mechanically but fight users who genuinely have reason to
 discuss a higher layer first. Warning preserves the principle while
 respecting expertise.
+
+**Widgets vs. text prompts (hybrid).** Pure-text prompts work everywhere and
+need no extra tool, but force the user to recall flags and type numbers to pick
+from a list. Pure-widget would be slick but can't carry free-form prose
+(positions, reopen reasons) — the bulk of real input. The hybrid uses
+`AskUserQuestion` only for the two genuinely enumerable choices (entry router,
+aspect triage) and text for everything else, with a numbered-list text fallback
+when the tool is absent. This buys the checkbox/menu ergonomics where they fit
+without losing prose or headless operation.
+
+**Grand rule enforced vs advisory.** Unlike layer discipline (soft-warn above),
+the one-topic-per-comment rule is hard-enforced: the value of the whole
+categorizer + statusline model depends on each comment carrying exactly one
+`(layer, aspect)`, so a bundled comment corrupts every downstream view. The
+refusal is still non-punitive — the user picks one aspect to open now and the
+rest are offered as follow-up threads.
 
 **Gatekeeper override-and-record vs no override.** No override would make
 the rule decorative once disagreed with. Override-with-record keeps the

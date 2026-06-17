@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash, Read, Write, AskUserQuestion
 description: Structured human-expert collaboration on PR direction, design, and trade-offs (NOT code review)
 ---
 
@@ -11,56 +11,151 @@ code-level findings are Copilot's job. This tool helps you discuss whether the
 
 Design contract: see `docs/design/goodies-review.md` in the goodies repo.
 
+## Internal design vs. what the user sees
+
+This spec uses internal machinery the **user must never see**: layer
+pattern/anti-pattern codes (`DS5`, `AP2`, `T1`, `P12` …) from the layer files,
+`[n]` citation markers, and the mode flags (`--engage`, `--reopen`,
+`--new-thread`). The runtime *reasons* with these — to load catalogs, ground
+claims, and route — but **translates everything to plain language before it
+reaches the screen.**
+
+- **Internal (keeps codes):** `docs/design/goodies-review.md`, the
+  `layers/*.md` catalogs, `references.md`, and the routing logic in this file.
+  Each catalog code has a meaningful *title* — that title (or a short paraphrase)
+  is what the user sees, never the code.
+- **User-facing (plain words only):** every prompt, option, proposed topic,
+  statusline, and drafted comment. No `DS5`, no `[3]`, no `--engage`, no
+  internal scenario ids. When the runtime cites a catalog match, it uses the
+  entry's plain name (e.g. "one class doing too many jobs", not "DS5").
+
+This rule is load-bearing for the whole UX; every section below assumes it.
+
 ## A note on confidence (LLM-generated content)
 
 This command's runtime is an LLM — me, when invoked. Many outputs (thread
-categorization, gatekeeper verdicts, reply drafts, dedupe matches) are
-LLM-generated judgments, not deterministic computations. To make those
-judgments checkable rather than opaque, every LLM-generated artifact is
-annotated with a three-level qualitative confidence label and a one-sentence
-rationale:
+categorization, proposed topics, gatekeeper verdicts, reply drafts, dedupe
+matches) are LLM-generated judgments, not deterministic computations. Each such
+judgment is annotated with a three-level confidence so it stays checkable.
 
-```
-[confidence: high — <one-sentence checkable rationale>]
-[confidence: medium — <what I'm uncertain about; what would resolve it>]
-[confidence: low — <what's missing; flagged for expert review>]
-```
+**Internally** the levels are `high` / `medium` / `low` with this discipline:
+`high` requires a *citable artifact* (a line in a doc, content of a thread,
+observable behavior) — without one, the label is `medium` at best; `medium`
+means "willing to defend, but here's the uncertainty"; `low` means "flagged for
+expert review."
 
-**Discipline rule:** I do not output `[confidence: high]` without naming a
-*citable artifact* (a line in a doc, content of a thread, observable
-behavior in the index). If I cannot cite, the label is `medium` at best.
-This makes the confidence checkable in seconds, not theatrical.
-
-Three levels (not five, not numeric percent) because LLM judgment doesn't
-support finer granularity honestly. `high` means "I checked the
-load-bearing evidence and it holds up." `medium` means "I'm willing to
-defend this, but here's what I'm not sure about." `low` means "this needs
-expert review before being acted on."
-
-The expert reads `low` and knows: spend the cycle here. Reads `high` with
-a checkable rationale and knows: spend the cycle elsewhere.
+**To the user** these render as a plain leading tag — `(high)` / `(medium)` /
+`(low)` — on each item, with a short footnote legend (see "Landing view"). No
+`[confidence: …]` syntax on screen.
 
 ---
 
 ## When invoked
 
-Parse arguments:
+Parse arguments (these flags are an *internal* entry shortcut; the normal user
+never types them — they fall out of the conversational routing below):
+
 - Bare number (`125`) → use the cwd's git remote as the repo.
 - Qualified form (`<owner>/<repo>#<num>` or alias `optibot#125`) → split on `#`.
 - Full PR URL → extract `<owner>/<repo>` and number.
-- No args → resume from `~/.cache/goodies-review/active-context.json`'s `current` field, then *automatically run `--engage` on it* (default: lowest-numbered layer with open threads). Equivalent to `/goodies-review <last-active-PR> --engage`. If no `current` context exists, output: "no active context. Try /goodies-review <PR> to start one."
-- `--list` → show all active contexts (see "Modes / list" below). No PR needed.
-- `--status` → show statusline only for current context. No other action.
-- `--show-purpose` → force-display the first-time banner.
+- No args → resume the last-active context from
+  `~/.cache/goodies-review/active-context.json`'s `current`. If none, say:
+  "no active discussion yet — give me a PR to look at."
+- `--list` → show all active contexts across PRs (no PR identifier needed); see
+  "Active contexts list" in Step 5.
+- `--status` → show the statusline for the current context only (no PR
+  identifier needed); see "Status" in Step 5.
+- `--show-purpose` → force-display the first-time banner (Step 0.1), regardless
+  of the banner count.
 
-Modes (parsed after the PR identifier):
-- (no flag) → summary mode.
-- `--engage [--layer <name>]` → walk open threads at a layer.
-- `--reopen <thread-id>` → gatekeeper-mediated reopen.
-- `--new-thread --layer <name>` → start a new top-level thread.
+(`--list` / `--status` / `--show-purpose` are resolved before PR resolution, so
+they never try to resolve a PR.)
 
-Layers: `problem`, `direction`, `design`, `tradeoff`, `implementation`.
+Internal mode targets (never surfaced to the user as such) and their CLI-flag
+shortcut forms: summary/landing (no flag), engage a thread
+(`--engage [--layer <name>]`), reopen a resolved thread (`--reopen <thread-id>`),
+start a new thread (`--new-thread [--layer <name>]`). The conversational routing
+in "Session entry flow" maps the user's plain-language intent onto one of these
+— the user picks a numbered item or talks, never types a flag — but the flags
+remain valid internal entry points (and are how the design contract names the
+sub-flows).
+
+Layers (internal taxonomy; shown to the user as the plain words themselves):
+`problem`, `direction`, `design`, `tradeoff`, `implementation`. The one allowed
+abbreviation is `impl` for `implementation` in the fixed-width statusline
+counter row (Step 4), where the full word would overflow the box; everywhere
+else the layer is spelled out in full.
 Statuses: `open`, `proposing`, `resolved`, `deferred`.
+
+## The governing rule
+
+> **No new thread unless the topic is really new. Always prefer continuing an
+> existing discussion.**
+
+Before creating any new top-level thread — from a proposed topic, a
+user-supplied topic, or an off-topic aspect split out mid-reply — the runtime
+checks every existing thread (open AND resolved) for a matching
+`(layer, aspect)`. If one exists, it routes the user to **continue** that
+thread (a reply), or to **reopen** it if it's resolved — never opens a
+duplicate. A new thread is created **only** when no existing thread, open or
+resolved, is about this `(layer, aspect)`.
+
+A second, related rule — **one topic per top-level comment**: each top-level
+comment holds exactly one `(layer, aspect)`; all discussion of it is threaded
+replies. The runtime refuses to draft a comment carrying two topics (it splits
+them) and refuses to fold an off-topic aspect into a reply (it holds it and
+routes it per the governing rule above).
+
+Both rules are **enforced, not advisory** — see Step 5 for the enforcement
+points in each flow.
+
+## Session entry flow
+
+Every interaction is the same cycle:
+
+> **The command *supplies*, the user *reviews* and *provides input*, that input
+> *forms* the comment or reply, and the user *confirms* before anything posts.**
+> The command never authors-and-posts on its own — it proposes, the human
+> shapes and approves.
+
+The tool's voice is **conversational, not a mode picker.** A session opens by
+*surveying what's already there* and inviting discussion — the user talks or
+picks a number; the runtime infers where that routes.
+
+**Order of operations at entry:**
+
+1. **Survey the existing discussion** (Step 2 fetch → Step 3 categorize →
+   Step 4 counts), **excluding Copilot-authored threads** (see Step 3) — those
+   are code review, not our lane.
+2. **Scan for proposed topics** (only if useful): read the grounding artifacts
+   (Step 2.5) against the layer catalogs and surface candidate topics —
+   **pre-filtered** to genuinely new ground (drop anything already covered by an
+   existing thread, per the governing rule).
+3. **Render the landing view** (Step 5 → Landing view): two groups (existing
+   discussion / proposed topics), each sorted high→low by confidence, unified
+   numbering across both, one tight line per item.
+4. **Invite input.** The user types a number (→ that item's detail) or talks
+   freely (→ runtime infers the route and says which, so the user can redirect).
+
+The internal routing targets:
+
+- a number in **existing discussion** → continue it (reply), or reopen it if
+  it's resolved (gatekeeper);
+- a number in **proposed topics** → open it as a new thread (after the
+  governing-rule check);
+- **prose** → the runtime infers: does it pick up an existing thread, reopen a
+  resolved one, or raise new ground? It states the inferred route in plain
+  words ("sounds like a new design topic — …") before drafting, so the user can
+  correct it.
+
+**What an "aspect" is.** A discussion topic stated as *(which layer) + (the
+specific concern/flaw it raises)* — grounded in a layer-catalog entry
+*internally*, surfaced by that entry's plain name. Never a vague "could be
+better." Crucially (see Step 5 → new thread), an aspect must be a genuine
+higher-layer discussion point — **not a code-level defect relabeled.** If a
+candidate reduces to "a line that throws / a missing await / an unindexed
+column / a null check," it is Copilot's lane and is dropped, no matter how it's
+labeled.
 
 ## Step 0: Ensure state directory exists
 
@@ -68,13 +163,12 @@ Before any read/write under `~/.cache/goodies-review/`:
 ```bash
 mkdir -p ~/.cache/goodies-review
 ```
-This holds `banner-count`, `active-context.json`, and any draft files. Without
-the parent dir, the first run fails when attempting to create them. Idempotent
-— safe on every invocation.
+This holds `banner-count`, `active-context.json`, and working draft files.
+Idempotent — safe on every invocation.
 
 ## Step 0.1: First-time banner
 
-Read `~/.cache/goodies-review/banner-count` (create file with `0` if missing).
+Read `~/.cache/goodies-review/banner-count` (create with `0` if missing).
 
 If count < 3 OR `--show-purpose` was passed:
 
@@ -85,8 +179,8 @@ If count < 3 OR `--show-purpose` was passed:
 *** Layers: problem -> direction -> design -> tradeoff -> implementation ***
 ```
 
-Increment the count if `--show-purpose` was *not* passed (forced displays
-don't count against the budget).
+Increment the count unless `--show-purpose` was passed (forced displays don't
+count against the budget).
 
 ## Step 1: Resolve repo and PR
 
@@ -94,11 +188,11 @@ If the user passed a bare number:
 ```bash
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
 ```
-If that fails (cwd isn't a git repo), error: "no PR identifier and not in a git repo; pass `<owner>/<repo>#<num>` or `<url>`."
+If that fails (cwd isn't a git repo), error: "no PR identifier and not in a git
+repo; pass `<owner>/<repo>#<num>` or `<url>`."
 
-Verify the PR exists *and capture the head SHA + body* (used by Step 2.5 to
-fetch linked design docs at the exact PR-head ref and to parse the body for
-design-doc references):
+Verify the PR exists and capture head SHA + body (Step 2.5 fetches linked
+design docs at the PR-head ref and parses the body):
 ```bash
 PR_INFO=$(gh api "repos/$REPO/pulls/$PR" --jq '{number, state, title, base: .base.ref, head: .head.ref, head_sha: .head.sha, body}')
 PR_HEAD_SHA=$(echo "$PR_INFO" | jq -r '.head_sha')
@@ -106,72 +200,47 @@ PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
 PR_STATE=$(echo "$PR_INFO" | jq -r '.state')
 PR_BODY=$(echo "$PR_INFO" | jq -r '.body // ""')
 ```
-Bind `PR_HEAD_SHA`, `PR_TITLE`, `PR_STATE`, `PR_BODY` for use in subsequent
-steps. (`PR_BODY` defaults to empty string when null so downstream
-regex/scan operations don't error on missing-body PRs.)
+(`PR_BODY` defaults to empty string when null so downstream scans don't error.)
 
-The REST `state` field is **lowercase** (`open` / `closed`) — different
-from GraphQL's uppercase `OPEN`/`CLOSED`. Compare accordingly. If the PR
-is closed/merged (state != "open"), warn the user but allow read-only
-modes (summary, list, status) to proceed; refuse `--engage` / `--reopen`
-/ `--new-thread` (no point posting on a closed PR).
+The REST `state` field is **lowercase** (`open`/`closed`) — unlike GraphQL's
+uppercase. If the PR is closed/merged (state != "open"), warn but allow
+read-only (landing view) to proceed; refuse posting (engage/reopen/new thread).
 
 ## Step 2: Fetch threads and review state
 
 Pull all top-level review comments and replies (paginated):
-
 ```bash
 gh api --paginate "repos/$REPO/pulls/$PR/comments" --jq '.[]'
 ```
-
-(With `--paginate`, `--jq '.[]'` streams one object per line across all pages.
-Collect into an array in the shell when needed: `... | jq -s '.'`)
+(With `--paginate`, `--jq '.[]'` streams one object per line across all pages;
+collect with `jq -s '.'` when an array is needed.)
 
 Pull review-thread metadata (resolved status). Derive owner/repo-name from
-`$REPO` (which is `<owner>/<repo>` from Step 1) so the GraphQL query has real
-values, not literal placeholders:
-
+`$REPO`:
 ```bash
 OWNER="${REPO%/*}"
 REPO_NAME="${REPO#*/}"
 gh api graphql -f query='{ repository(owner: "'"$OWNER"'", name: "'"$REPO_NAME"'") { pullRequest(number: '"$PR"') { reviewThreads(first: 100) { pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { databaseId body author { login } createdAt } } } } } } }'
 ```
 
-**Paginate the *outer* `reviewThreads` connection** with
-`reviewThreads(first: 100, after: "<cursor>")` until `pageInfo.hasNextPage`
-is false. This handles PRs with >100 threads.
-
-**Also paginate the *inner* `comments(first: 100)` connection** when any
-thread's `comments.pageInfo.hasNextPage == true`. A long discussion within
-a single thread can exceed 100 comments, and silently truncating the inner
-connection means later replies (often the *resolution* comment) are
-missing — which would cause the categorizer to misclassify status. Per
-thread that paginates: re-query that thread's comments with `comments(first:
-100, after: "<inner-cursor>")` and merge the additional pages into the
-thread's comment list before categorization.
+**Paginate the outer `reviewThreads`** with `reviewThreads(first: 100, after:
+"<cursor>")` until `pageInfo.hasNextPage` is false (handles >100 threads).
+**Also paginate the inner `comments(first: 100)`** when a thread's
+`comments.pageInfo.hasNextPage == true` — a long discussion can hide the
+resolution comment past the first 100, which would misclassify status.
 
 Pull general PR comments (top-level discussion, not inline-review):
-
 ```bash
 gh api --paginate "repos/$REPO/issues/$PR/comments" --jq '.[]'
 ```
 
-(Same `--paginate` streaming pattern — collect with `jq -s '.'` if an array is needed.)
-
 ## Step 2.5: Fetch grounding context
 
-The gatekeeper, status inference, and reply drafting all need to reason
-against the project's stated contracts — otherwise the LLM is making
-judgments based only on the PR's local content, missing the project-wide
-conventions that should constrain it.
+The gatekeeper, status inference, topic scan, and reply drafting all reason
+against the project's stated contracts — otherwise the LLM judges only from the
+PR's local content. Fetch:
 
-Fetch:
-
-1. **The target repo's CLAUDE.md** — try the conventional locations in order
-   and take the first that exists. Different projects store Claude guidance
-   under different paths; honoring all of them prevents grounding from being
-   silently skipped on repos using the alternate locations:
-
+1. **The target repo's CLAUDE.md** — try conventional locations, first hit wins:
    ```bash
    REPO_SLUG=$(echo "$REPO" | tr '/' '_')
    CLAUDE_MD_OUT=~/.cache/goodies-review/claude-md-${REPO_SLUG}-${PR}.txt
@@ -184,559 +253,566 @@ Fetch:
      rm -f "$CLAUDE_MD_OUT"
    done
    ```
-   Path is under the already-created state directory `~/.cache/goodies-review/`
-   (Step 0), not `/tmp` — fixed `/tmp` paths are vulnerable to symlink
-   clobbering on multi-user systems and collide on concurrent runs. Best-
-   effort: if none of the candidates exists, continue without grounding;
-   note "no CLAUDE.md in target repo" in the statusline footer. Fetch is
-   pinned to `$PR_HEAD_SHA` so the grounding reflects what's on the branch
-   under review (master may have moved or even diverged).
+   Path is under the state directory (not `/tmp` — symlink-clobber + concurrent-
+   run safety). Best-effort: if none exists, continue without it; note "no
+   CLAUDE.md in target repo" in the footer. Pinned to `$PR_HEAD_SHA` so grounding
+   matches the branch under review.
 
-2. **Linked design docs in the PR body.** Scan `$PR_BODY` (captured in Step
-   1) for `docs/design/<area>/<name>.md` paths and full URLs to such files.
-   Suggested regex: `docs/design/[A-Za-z0-9_/-]+\.md` for repo-relative paths
-   plus `https://github.com/[^/]+/[^/]+/blob/[^/]+/docs/design/[^ )]+\.md` for
-   absolute URLs. Deduplicate before fetching. For each match, derive a safe
-   filename slug by replacing all `/` with `_` in the path component (e.g.,
-   `docs/design/foo/bar.md` → `design-docs_design_foo_bar.md`), then fetch
-   and save in one pipeline:
+2. **Linked design docs in the PR body.** Scan `$PR_BODY` for repo-relative
+   `docs/design/[A-Za-z0-9_/-]+\.md` paths, plus same-repo blob URLs
+   `https://github.com/$REPO/blob/[^/]+/docs/design/[^ )]+\.md` (reduce a matched
+   URL to its repo-relative `docs/design/...` path before fetching). Only
+   same-repo docs are supported — the fetch uses `repos/$REPO/contents/<path>`,
+   so a cross-repo `github.com/<other>/<other>/blob/...` URL cannot be resolved;
+   skip such URLs (note them in the footer) rather than fetching them from the
+   wrong repo. Deduplicate, then fetch each at the PR-head ref:
    ```bash
    SLUG=$(echo "<path>" | tr '/' '_')
    DESIGN_OUT=~/.cache/goodies-review/design-${REPO_SLUG}-${PR}-${SLUG}
-   gh api "repos/$REPO/contents/<path>?ref=$PR_HEAD_SHA" --jq '.content' \
-     | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
-     > "$DESIGN_OUT" 2>/dev/null || true
+   if gh api "repos/$REPO/contents/<path>?ref=$PR_HEAD_SHA" --jq '.content' 2>/dev/null \
+        | python3 -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" > "$DESIGN_OUT" 2>/dev/null \
+      && [ -s "$DESIGN_OUT" ]; then
+     : # kept — fetch succeeded and file is non-empty
+   else
+     rm -f "$DESIGN_OUT"   # drop empty/failed fetch so later steps don't treat it as grounding
+   fi
    ```
-   If `$PR_BODY` is empty (no PR
-   description), this step is a no-op — that's fine; the gatekeeper falls
-   back to CLAUDE.md + project-conventions grounding only.
+   Mirror the CLAUDE.md fetch: only keep the file if the fetch succeeded and the
+   content is non-empty; otherwise remove it, so a 404/auth/network failure can't
+   leave an empty file that the topic scan or gatekeeper mistakes for real
+   grounding. If `$PR_BODY` is empty, this whole step is a no-op.
 
-3. **Design docs added by *this* PR.** If the PR introduces files under
-   `docs/design/`, treat those as design contracts the PR is establishing.
-   The gatekeeper grounds against the doc's content + project conventions.
+3. **Design docs added by *this* PR** (files under `docs/design/`) — treat as
+   the design contracts the PR establishes.
 
-Read all fetched content and hold it as the *grounding context* for
-subsequent steps. When the gatekeeper renders a verdict citing CLAUDE.md
-section X or design-doc line Y, those citations refer to the fetched
-content and are checkable by the expert in seconds.
+4. **The layer pattern catalogs.** Both the proposed-topics scan and engaging a
+   thread need the layer catalogs (named patterns + anti-patterns) so claims are
+   grounded in recognized practice, not ad-hoc opinion. The files live alongside
+   this command; resolve the path through the command's own symlink so it works
+   regardless of where goodies is checked out. Whitelist the layer name first —
+   it can come from user input and is interpolated into a path, so only the five
+   known layers are valid (blocks traversal like `../../../etc/passwd`):
+   ```bash
+   case "<layer>" in
+     problem|direction|design|tradeoff|implementation) ;;
+     *) echo "unknown layer '<layer>' (expected: problem|direction|design|tradeoff|implementation)"; exit 1 ;;
+   esac
+   CMD_REAL=$(python3 -c "import os; print(os.path.realpath(os.path.expanduser('~/.claude/commands/goodies-review.md')))")
+   LAYER_FILE="$(dirname "$CMD_REAL")/goodies-review/layers/<layer>.md"
+   if [ -f "$LAYER_FILE" ]; then
+     cat "$LAYER_FILE"
+   else
+     # Best-effort degradation: emit an explicit marker so the runtime can note
+     # it in the footer instead of producing silent empty output.
+     echo "no pattern guidance for <layer> layer (missing $LAYER_FILE)"
+   fi
+   ```
+   Load the layer(s) in play (all five at the landing-view scan; the engaged
+   layer when continuing a thread). Hold the catalog **internally** — its codes
+   (`DS5`, `AP2`, …) ground the runtime's reasoning but are translated to the
+   entry's plain title before anything reaches the user (see "Internal design vs.
+   what the user sees"). If a file is missing (older checkout), note "no pattern
+   guidance for <layer> layer" in the footer and continue without named grounding.
+
+Hold all fetched content as *grounding context*. Citations the runtime makes
+(CLAUDE.md section X, design-doc line Y) refer to this content and are checkable
+by the expert in seconds.
 
 ## Step 3: Categorize each thread
 
-For every thread (review-thread node from GraphQL or general PR comment):
+**First, filter out Copilot.** This tool is human-expert collaboration, not code
+review. Exclude any thread whose first-comment author login matches the
+case-insensitive substring/regex `copilot` — i.e. `login | test("copilot"; "i")`,
+the same predicate goodies-watch uses — so bot variants like `Copilot` and
+`github-copilot[bot]` are all caught (not an exact-equality check). Apply the
+filter to the survey, the counts, the routing options, and the topic scan. Copilot's
+code-review threads are never surfaced for engagement. (Keep a single quiet
+footer line noting how many were set aside, e.g. "3 Copilot code-review threads
+set aside — that's Copilot's lane.")
 
-1. **Read the first comment's body.** Look for a header at the top in the form:
+For every *remaining* (human) thread:
+
+1. **Read the first comment's body.** Look for a tool-emitted tag at the top:
    ```
-   [review-pr / <layer> / <status>]
+   <layer> / <status> — <short headline>
    ```
-   If found, capture the author's claimed layer + status as a *primary*
-   signal — but do not blindly trust it (see step 1.5).
+   If present, capture the claimed layer + status as a *primary* signal — but
+   verify (step 1.5). Parse the **status as the first token after `/`**, and
+   treat anything after a ` · ` as an annotation, not part of the status — a
+   reopen-over-override comment carries the variant
+   `<layer> / open · override: gatekeeper rejected — <headline>`, where the
+   status is still `open`. (Older comments may carry a legacy
+   `[review-pr / layer / status]` header; still parse it, but the tool no longer
+   emits that form — see Step 5 and "Comment header reference".)
 
-1.5. **Header-vs-content mismatch check.** If a header is present, also infer
-   the layer from the comment body using the heuristic in step 2 below. If
-   the inferred layer differs from the header's claim:
-   - **Surface the mismatch in the categorized output** with annotation
-     `[via header · MISMATCH: header says <X>, content reads as <Y>]`.
-   - **Render a confidence label** for the categorization:
-     `[confidence: low — header-content mismatch detected; expert review
-     recommended]`.
-   - **Use the header's claim as the categorized layer** by default (the
-     author's stated intent), but make the inconsistency visible so a human
-     can correct it via override.
+1.5. **Tag-vs-content mismatch check.** If a tag is present, also infer the layer
+   from the body (step 2). If they differ:
+   - surface the mismatch in the listing: `(tag says <X>, reads as <Y>)`;
+   - render confidence `(low)` with rationale "tag/content mismatch; expert
+     review recommended";
+   - use the tag's claim by default (author's stated intent) but keep the
+     inconsistency visible for override.
 
-   This is what makes the loose format a *safety valve* not a blind trust
-   zone: a misleading header (intentional or accidental) doesn't silently
-   misclassify the thread.
+2. **If no tag, infer.** From the body decide:
+   - **Layer:** problem? direction? a specific design choice? a trade-off?
+     code-level (typos/naming/off-by-one/missing fields)? Default unclear to
+     `implementation`.
+   - **Status:** last reply settling it (`resolved`)? proposing a resolution
+     (`proposing`)? still asking (`open`)? participant-deferred (`deferred`)?
 
-2. **If no header, infer.** Read the comment body and decide:
-   - **Layer:** is this about whether the *problem* is right? the *direction*? a
-     specific *design* choice? a *trade-off* between alternatives? *code-level*
-     concerns (typos, naming, off-by-one, missing fields)? Default unclear cases
-     to `implementation` since most code-review bot output lands there.
-   - **Status:** is the thread's last reply settling it (`resolved`)? proposing
-     a resolution awaiting agreement (`proposing`)? still asking (`open`)?
-     marked deferred by the participants (`deferred`)?
+   If GitHub's `isResolved` is true, force `resolved`. Mark provenance
+   `(inferred)`. **Render confidence** citing the load-bearing evidence; `high`
+   only with a quotable element.
 
-   If GitHub's `isResolved` is true, force status to `resolved` regardless of
-   inference. Mark provenance `[inferred]`.
+3. **Detect cross-layer references.** If the body includes
+   `-> ref: <layer> / <status> thread #N`, record the dependency (used by the
+   gatekeeper's wrong-layer detection).
 
-   **Render a confidence label per inference**, citing the load-bearing
-   evidence. Examples:
-   - `[confidence: high — explicit "fixed in <sha>" resolution + file:line
-     context match implementation-layer pattern]`
-   - `[confidence: medium — body mentions both architectural and
-     implementation concerns; could be design layer or implementation]`
-   - `[confidence: low — short comment with no clear layer signal; expert
-     review recommended]`
+4. **Build the layer-counter map.** For each of the 5 layers, count `resolved`
+   vs `open|proposing` threads (Copilot already excluded).
 
-   Per the "no high without citable artifact" rule (see top of doc), `high`
-   is reserved for cases where the rationale points to a specific quotable
-   element of the comment. Pure pattern-match without a citable artifact is
-   `medium` at best.
+## Step 4: Counts and statusline
 
-3. **Detect cross-layer references.** If the comment includes
-   `-> ref: [<layer> / <status>] thread #N`, record the dependency. Used in
-   the gatekeeper's "wrong layer of resolution" detection.
-
-4. **Build the layer-counter map.** For each of the 5 layers, count threads
-   in `resolved` status and threads in `open|proposing` status.
-
-## Step 4: Print the statusline
-
-ASCII boxed format. Determine the maximum interior width from the title row
-content (`<repo>#<PR> -- <PR title>`, capped at ~78 chars total to fit a
-typical terminal). Pad rows accordingly.
-
-Counter format: `<resolved>/<open>` per layer — both are non-negative
-integers (e.g. `3/8` means 3 resolved, 8 open). Always emit the actual
-counts; never emit literal `R/O` in real output (the placeholder is
-spec-only, replaced at runtime).
+ASCII boxed, interior width from the title row (`<repo>#<PR> -- <title>`, capped
+~78 chars). Counter per layer is `<resolved>/<active>`, where the second number
+is the count of `open` + `proposing` threads (i.e. everything not yet resolved
+or deferred — matching the `open|proposing` grouping in Step 3), NOT just
+`open`. Real integers at runtime; the `<r>/<o>` in the diagram below is
+spec-only shorthand. Copilot threads are NOT counted.
 
 ```
-+- <repo>#<PR> -- <title> -----+
-| <current layer> * thread #<id>          |
++- <repo>#<PR> -- <title> --------------------------------------------+
+| <context line>                                                      |
 | problem <r>/<o> * direction <r>/<o> * design <r>/<o> * tradeoff <r>/<o> * impl <r>/<o> |
-+--------------------------------+
++---------------------------------------------------------------------+
 ```
 
-Concrete worked example with real numbers (note: `<r>/<o>` placeholders
-become numerals at runtime):
-```
-+- intel-sandbox/os.linux.pnp.optibot#125 -- B9 design -----+
-| design layer * thread #3411232637                          |
-| problem 0/0 * direction 2/0 * design 3/8 * tradeoff 0/0 * impl 13/0 |
-+------------------------------------------------------------+
-```
+The `<context line>` is `looking together — <M> human threads, <K> Copilot set
+aside` at the landing view, or `<layer> · thread #<id>` when inside a thread.
 
-For summary mode (no `--engage`), the second row instead reads:
-```
-| summary view -- 5 layers, <M> threads total                              |
-```
+## Interactive flow (shared contract)
 
-## Step 5: Mode-specific behavior
+Every prompt below follows this one contract, so the vocabulary stays consistent
+across flows. Token matching is case-insensitive and whitespace-trimmed.
 
-### Summary mode (no `--engage`/`--reopen`/`--new-thread`)
+### Navigation model: levels, and `(n)o` goes back
 
-After the statusline, print the categorized thread list:
+The session is a **level hierarchy**, not a flat set of commands:
 
 ```
-PROBLEM (1 thread, 1 open)
-  [open]   #thread-id by @user [inferred] -- "is this really the right problem to solve given X"
-DIRECTION (3 threads, 2 resolved, 1 open)
-  [resolved] #thread-id by @user [via header] -- "predicate language vs fixed schema"
-  [resolved] #thread-id by @user [inferred]   -- "free-form transform_class vs enum"
-  [open]   #thread-id by @user [via header] -- "should optimize-postmortem be sealed?"
-DESIGN (8 threads, 8 resolved)
-  ...
-TRADEOFF (0 threads)
-IMPLEMENTATION (13 threads, 13 resolved)
-  ... (Copilot findings, all addressed)
+landing view (the numbered list)
+  -> item detail (you picked a number -- the full picture)
+       -> draft (a reply/comment shown for confirmation)
 ```
 
-Threads are listed in the order: layer (problem → implementation), then status
-(open → proposing → resolved → deferred), then chronological. Each entry shows
-thread id, author, provenance (header or inferred), and a short title (first
-sentence or ~80 chars of the body).
+`(n)o` means **back up one level** — it is *not* a terminal abort. From a draft,
+`no` returns to the item detail; from the detail, back to the list; from the
+list, out of the session. The user climbs out by choosing `no` repeatedly.
+**There is no `quit`/`q` token.**
 
-After the listing, write the active context to
-`~/.cache/goodies-review/active-context.json`:
+### Prompt archetypes
 
-```json
-{
-  "current": {"repo": "<owner>/<repo>", "pr": <PR>, "thread": null, "layer": null},
-  "recent": [...]
-}
+- **Confirm `(y)es, (n)o, (e)dit?`** — shown after a drafted reply/comment.
+  `y`/`yes` posts; `n`/`no` backs up a level without posting; `e`/`edit` enters
+  the edit loop. (Render the shortcut letter parenthesized in the word, exactly
+  as `(y)es, (n)o, (e)dit?`, so the single-key answer is self-evident.)
+- **Confirm `(y)es, (n)o?`** — a yes/no gate with no draft to edit (e.g. "add
+  this to the existing thread?"). `y` proceeds; `n` backs up.
+- **Disposition `(revise/override)`** — the gatekeeper verdict prompt. `revise`
+  re-collects the user's prose and retries; `override` proceeds despite the
+  verdict (with the override marker).
+- **Prose** — free-form input (a position, a reopen reason, a topic). No token
+  list. The way back from a prose prompt is **empty input (just Enter)** — it
+  carries no content, so it can't collide with a real answer, and it means
+  "never mind, back up a level."
+- **Selection** — pick from a fixed set (a numbered landing item; the
+  multi-select topic triage). May use `AskUserQuestion` (see below); the user
+  may also just type the number, or talk.
+
+### Input mechanics (widget vs. text)
+
+`AskUserQuestion` is used **only** for selection from a fixed set — chiefly the
+multi-select topic triage, and optional disambiguation when the user's prose is
+genuinely ambiguous. It is **not** the front door: the default entry is the
+conversational landing view + open invitation to talk. Everything that is
+free-form (positions, reasons, topics) stays text; the simple confirms stay
+text tokens. `AskUserQuestion` always offers an "Other" escape, so a selection
+never traps the user. When the tool is unavailable (headless), every selection
+falls back to a numbered text prompt (type the number(s)).
+
+### Edit loop
+
+On `edit`, prompt for the revised text, replace the working draft with it
+(rewriting the draft file — see below), and re-present the *same* confirm
+prompt. A draft is **never** posted without an explicit `y`.
+
+### Working drafts live on disk (context-lean)
+
+The runtime is the LLM, so an "in-session" draft would otherwise sit in the
+conversation window and bloat it across a long multi-thread session. Instead,
+the working draft is **externalized**:
+
+- On draft creation/edit: Write it to
+  `~/.cache/goodies-review/draft-<repo-slug>-<pr>-<thread-or-new>.txt`
+  (`<repo-slug>` replaces `/` with `_`).
+- `(n)o` (back) from a draft: the file **persists**; returning to that item
+  reads it back, so edits aren't lost within the session.
+- On successful post, or session end: delete the draft file.
+
+The draft file is the single source of truth for an in-progress draft (this also
+covers the old network-failure rescue case); context holds it only while it's on
+screen.
+
+### Unrecognized input
+
+At a token prompt (not prose), input matching no token is re-prompted once,
+echoing the valid options. A second unrecognized response falls back to the
+**non-mutating** default — `(n)o`/back at a confirm prompt, don't-reopen at a
+gatekeeper prompt. Unrecognized input is never treated as `y`, so a typo can
+never post or resolve.
+
+## Step 5: Behavior by flow
+
+### Landing view (the default — survey + invite)
+
+After Step 4, render the two groups. **Never interleave them**; each is a
+labeled block, each sorted **high→low by confidence**, with **unified continuous
+numbering** running through both (existing discussion first, then proposed
+topics). One tight, aligned line per item; the full description appears only
+when the user picks the number.
+
 ```
-(`recent` is updated by appending the current `{repo, pr, last_seen: <ISO ts>}`,
-deduplicating by `repo + pr`, keeping the most recent 10.)
+Let's look at <repo>#<PR> — "<title>" — together.
 
-End the summary mode output with a hint:
-```
-Hint: /goodies-review <PR> --engage to walk open threads.
-```
+Existing discussion
+  1  (high)    direction · @marcus · proposing — <short headline>
+  2  (medium)  problem   · @priya  · open        — <short headline>
+  3  (medium)  tradeoff  · @priya  · open        — <short headline>
 
-### `--engage [--layer <name>]` mode
+Proposed topics (new ground not yet discussed)
+  4  (medium)  design    · new                   — <short headline>
 
-Determine the engagement layer:
-- If `--layer` was passed, use it.
-- Otherwise, default to the lowest-numbered layer with at least one open thread.
+  how sure:  (high) checked, holds up · (medium) worth raising, uncertain ·
+             (low) a hunch, your call
 
-**Layer-resistance check.** Before engaging at the determined layer, count
-open threads at lower-numbered layers. If any exist:
+(3 Copilot code-review threads set aside — that's Copilot's lane.)
 
-```
-NOTE: layer 1 (problem) has 1 open thread; engaging at layer 3 (design) anyway.
-The hierarchy suggests settling lower layers first. Confirm to proceed (y/n)?
-```
-
-If user types anything other than 'y' or 'yes', stop. Otherwise continue.
-
-**Load the layer's pattern guidance.** Each layer has a companion file of
-named patterns + anti-patterns that grounds the engagement — so drafted
-replies cite recognized practice rather than ad-hoc opinion, and recurring
-anti-patterns get named instead of re-litigated each time. The files live
-alongside this command in the goodies repo; resolve the path through this
-command's own symlink so it works regardless of where goodies is checked
-out:
-
-```bash
-# Whitelist the layer name first: it comes from user input (--layer), and is
-# about to be interpolated into a file path. Only the five known layers are
-# valid; anything else fails fast and can never reach the path (blocks
-# traversal like --layer ../../../etc/passwd).
-case "<layer>" in
-  problem|direction|design|tradeoff|implementation) ;;
-  *) echo "unknown layer '<layer>' (expected: problem|direction|design|tradeoff|implementation)"; exit 1 ;;
-esac
-CMD_REAL=$(python3 -c "import os; print(os.path.realpath(os.path.expanduser('~/.claude/commands/goodies-review.md')))")
-LAYER_FILE="$(dirname "$CMD_REAL")/goodies-review/layers/<layer>.md"
-if [ -f "$LAYER_FILE" ]; then
-  cat "$LAYER_FILE"
-else
-  # Best-effort degradation: emit an explicit marker so the runtime has
-  # something concrete to surface in the statusline footer (see below),
-  # rather than silently producing empty output.
-  echo "no pattern guidance for <layer> layer (missing $LAYER_FILE)"
-fi
-```
-
-Read the file (if present) and hold its patterns + anti-patterns as
-engagement context for this layer. Best-effort: if the file is missing
-(older checkout, layer not yet authored), note "no pattern guidance for
-<layer> layer" in the statusline footer and continue — the engagement
-still works, just without named-pattern grounding.
-
-For each open or proposing thread at the engagement layer:
-
-1. Show the thread context: original comment, all replies, current state.
-2. Show the file/line if it's an inline review comment (`<path>:<line>`).
-3. Ask: "what's your position on this thread?" — open-ended; user types prose.
-   If the thread matches a named pattern or anti-pattern from the layer file
-   loaded above, surface it here: "this reads like *<pattern name>* (<layer>
-   guidance)" so the user can lean on or push back against the named practice.
-4. Drafts a reply using the user's prose, with header
-   `[review-pr / <layer> / <status>]` where `<status>` is the user's claim
-   (ask if unclear: "is this `proposing` a resolution, or keeping it `open`?").
-   When a layer pattern/anti-pattern applies, cite it by name in the draft so
-   the reply grounds in recognized practice rather than bare assertion.
-5. **Show the draft** and ask "post this reply (y/n/edit)?":
-   - `y`: post — but the API endpoint depends on the thread's *kind*,
-     which we tracked when fetching in Step 2:
-     - **Inline review-comment thread** (originated from
-       `/pulls/$PR/comments` — has `path`/`line` + a `pull_request_review_id`):
-       reply via the review-comment replies endpoint:
-       ```bash
-       gh api repos/<repo>/pulls/<PR>/comments/<thread-comment-id>/replies -f body="<draft>"
-       ```
-     - **General PR comment thread** (originated from
-       `/issues/$PR/comments` — top-level discussion, no inline anchor):
-       the review-comment replies API does not apply. Post a new general
-       comment that quotes the original to anchor the conversation
-       visually:
-       ```bash
-       # Header first (so the categorizer finds it at the top), then a
-       # blockquote of the parent's first ~3 lines to anchor context,
-       # then the reply body. GitHub renders this as a threaded
-       # conversation in the issue-comment timeline.
-       HEADER="[review-pr / <layer> / <status>]"
-       PARENT_QUOTE=$(echo "<parent-body>" | head -3 | sed 's/^/> /')
-       BODY=$(printf '%s\n\n%s\n\n%s' "$HEADER" "$PARENT_QUOTE" "<reply-body>")
-       gh api repos/<repo>/issues/<PR>/comments -f body="$BODY"
-       ```
-       Note: this isn't a true reply (issue comments have no native
-       threading), but the header-first + quote + chronological order
-       keeps the conversation legible and categorizer-parseable. The
-       `[review-pr / layer / status]` header is at the very top so
-       future invocations parse it correctly — placing it after the
-       blockquote would break header detection.
-   - `n`: skip, move to next thread.
-   - `edit`: let user revise; loop back to step 5.
-
-After posting, optionally resolve the thread (only applies to inline
-review-comment threads, since general PR comments have no resolve state):
-
-```bash
-gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<THREAD_ID>"}) { thread { isResolved } } }'
+Type a number to dig in, or just say what's on your mind:
 ```
 
-Update the active-context file's `current` field with the engaged thread id +
-layer.
+Notes:
+- Each headline follows the **violation + impact + what's-now** shape, compressed
+  to one line (see "Topic/headline formula" under new thread).
+- "Proposed topics" is **pre-filtered** to new ground: drop any candidate whose
+  `(layer, aspect)` matches an existing thread (open or resolved) — the two
+  groups are disjoint by construction. If the scan finds nothing new, say so:
+  "nothing new beyond what's already being discussed."
+- The proposed-topics scan obeys the no-laundering rule (no code-level defects
+  reframed as aspects) and the no-codes rule (plain names, never `DS5`).
+- Then write active context to `~/.cache/goodies-review/active-context.json`:
+  ```json
+  {"current": {"repo": "<owner>/<repo>", "pr": <PR>, "thread": null, "layer": null},
+   "recent": [...]}
+  ```
+  (`recent`: append `{repo, pr, last_seen: <ISO ts>}`, dedupe by `repo+pr`, keep
+  10 most recent.)
 
-### `--reopen <thread-id>` mode
+**Picking a number** opens that item's detail (item detail level):
+```
+> 4
 
-**Identifier semantics.** The user passes the *visible numeric* thread id
-(the one shown in `--engage` output and in URLs like
-`https://github.com/<repo>/pull/<PR>#discussion_r3411232637` — the
-`databaseId` of the thread's first comment). The command maps it
-internally to the GraphQL opaque thread `id` (`PRRT_kwDO...`) needed for
-the `resolveReviewThread` and reopen mutations. The mapping uses the
-same `reviewThreads` query already fetched in Step 2: walk the threads
-list, find the one whose first-comment `databaseId` matches the
-user-supplied numeric id, take its `id` field. If no match, error:
-"thread #<N> not found in PR #<PR>'s review threads. Did you pass the
-right number? Look for `#discussion_r<N>` in the GitHub URL."
+  Proposed topic · design · new ground                     (how sure: medium)
 
-The thread must currently be `resolved`. If not, error: "thread #N is already
-open; no reopen needed."
+  <full plain-language description: the violation, why it costs something,
+   and what the current design commits to>
 
-Print the thread's resolution context: original comment, replies, the
-resolution comment(s).
+  Open this as a new discussion?   (y)es, (n)o, (e)dit?
+```
+(`yes` → draft via the new-thread flow; `no` → back to the list; `edit` → adjust
+the angle, then re-present.)
 
-Ask: "you're requesting to reopen this resolved thread. What's your reason?"
-User types prose.
+**Talking instead** routes by inference: the runtime states the route it
+inferred in plain words and proceeds, e.g. "sounds like a new design topic — let
+me draft it" or "that's @priya's open tradeoff thread (#3) — let me take you
+there." The user can redirect before any draft is shown.
 
-**Run the gatekeeper.** Evaluate the user's reason against three buckets:
+### Continue an existing thread (engage)
 
-1. **New evidence.** Does the reason cite a real instance, subsequent commit,
-   downstream consequence, or new linked artifact (issue/doc/external) that
-   the prior thread couldn't have considered?
+Entered by picking an open/proposing existing-discussion item (or inferred from
+prose).
 
-2. **Internal inconsistency.** Does the reason point to a conflict between
-   the resolution and another part of the project (CLAUDE.md, design docs,
-   another resolved thread)?
+**Layer-resistance soft-warn (per the design contract).** Before engaging a
+thread, if any *lower-numbered* layer (problem → … → implementation) still has
+an open thread, surface a one-line warning — e.g. "the problem layer still has
+an open question; settling lower layers first usually goes better — continue at
+design anyway? (y)es, (n)o?" This is a soft warn, not a block: `y` proceeds, `n`
+backs up to the landing view. It preserves the hierarchy discipline while
+respecting the expert's judgment.
 
-3. **Wrong layer.** Does the reason argue the thread was resolved at the
-   wrong hierarchy level (e.g. resolved at implementation when the issue is
-   at design)?
+For the chosen thread:
+
+1. Show the context: original comment, all replies, current state; the file/line
+   if it's an inline review comment.
+2. If the thread matches a named catalog pattern, surface it **by plain name**
+   ("this reads like the 'problem stated as a solution' concern"), never a code.
+3. Ask **(prose):** "what's your position?" Empty input backs up a level.
+4. **Enforce topic scope (the governing rule).** Before drafting, check whether
+   the user's input raises an aspect *different* from this thread's. If it does:
+   - **exclude** the off-topic part from the reply (don't merely flag it) — the
+     reply stays scoped to this thread's one aspect;
+   - **hold** the off-topic aspect, and route it per the governing rule: if it
+     matches an existing thread, offer to continue that one; only if it's
+     genuinely new ground does it become a new thread. Surface this in plain
+     words, e.g. "the TTL point belongs with @priya's open tradeoff thread —
+     I'll offer it there after we post this."
+5. Draft the on-topic reply. If a catalog pattern applies, cite it **by name**.
+   Write the draft to the draft file.
+6. **Show the draft, ask `(y)es, (n)o, (e)dit?`** (confirm archetype). On `y`,
+   post by thread kind (tracked in Step 2):
+   - **Inline review-comment thread** (`/pulls/$PR/comments`, has `path`/`line`):
+     ```bash
+     gh api repos/<repo>/pulls/<PR>/comments/<thread-comment-id>/replies -f body="<draft>"
+     ```
+   - **General PR comment thread** (`/issues/$PR/comments`, no inline anchor):
+     no reply endpoint; post a new comment that tags + quotes the parent so it
+     reads as threaded and the categorizer can parse it:
+     ```bash
+     TAG="<layer> / <status> — <short headline>"
+     PARENT_QUOTE=$(echo "<parent-body>" | head -3 | sed 's/^/> /')
+     BODY=$(printf '%s\n\n%s\n\n%s' "$TAG" "$PARENT_QUOTE" "<reply-body>")
+     gh api repos/<repo>/issues/<PR>/comments -f body="$BODY"
+     ```
+     The full `<layer> / <status> — <short headline>` tag is the first line (same
+     format as every other tool-emitted comment — see "Comment header reference")
+     so future runs parse and summarize it consistently.
+7. After a successful post, delete the draft file. Optionally resolve the thread
+   (inline review-comment threads only):
+   ```bash
+   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<THREAD_ID>"}) { thread { isResolved } } }'
+   ```
+8. If an aspect was held in step 4, now act on its route (continue the matching
+   thread, or — only if truly new — open a new one). Update active-context's
+   `current` to the engaged thread + layer.
+
+### Reopen a resolved thread
+
+Entered by picking a *resolved* existing-discussion item (or inferred). The user
+gives a numeric thread id internally mapped to the GraphQL opaque id via the
+`reviewThreads` query from Step 2 (match first-comment `databaseId`). If no
+match: "thread #<N> not found in this PR's review threads." If the thread isn't
+resolved: "thread #N is already open; no reopen needed."
+
+Print the resolution context (original, replies, resolution comment). Ask
+**(prose):** "what's your reason for reopening?"
+
+**Adjacent-not-reopen check first.** If the reason isn't about the resolved
+question but an adjacent concern, route per the governing rule: prefer an
+existing thread if one matches; otherwise "that's separate — open a new
+discussion under <layer>?" `(y)es, (n)o?`
+
+**Run the gatekeeper.** Evaluate the reason against three buckets:
+
+1. **New evidence** — a real instance, later commit, downstream consequence, or
+   new linked artifact the prior thread couldn't have considered.
+2. **Internal inconsistency** — a conflict between the resolution and another
+   part of the project (CLAUDE.md, design docs, another resolved thread).
+3. **Wrong layer** — the thread was resolved at the wrong hierarchy level.
 
 Render one verdict:
 
-- **Holds.** Output: "reason holds — bucket: <which one>." Draft the reopen
-  comment with header `[review-pr / <layer-of-original> / open]`, include the
-  user's reason, reference the prior resolution. Show draft, ask y/n/edit.
+- **Holds** — "reason holds — basis: <which bucket>." Draft the reopen with the
+  full first-line tag `<layer-of-original> / open — <short headline>` (the same
+  canonical form as every tool-emitted comment — don't omit the headline);
+  include the reason, reference the prior resolution. Show draft,
+  `(y)es, (n)o, (e)dit?`
+- **Doesn't hold** — "doesn't yet hold — <specific feedback>" (e.g. "restates a
+  preference the resolution already addressed at line Y; you'd need <missing
+  element>"). Then disposition `(revise/override)`.
+- **Borderline** — "borderline — path to acceptance: <next step>." Default:
+  don't reopen. Disposition `(revise/override)`.
 
-- **Doesn't hold.** Output: "reason doesn't yet hold — <specific feedback>."
-  Examples of feedback:
-  - "your reason restates preference X that thread #N's resolution already
-    addressed at line Y; for a reopen you'd need [concrete missing element]."
-  - "the cited evidence isn't new — it appears in thread #N's resolution
-    comment."
-  - "this is an authority appeal ('PM said'); the gatekeeper evaluates the
-    architectural argument, not the source. What's the architectural issue?"
-
-  Ask: "revise reason and retry, or override (drop the gatekeeper's decision
-  and post anyway)?" If revise, loop. If override, proceed to draft with
-  override marker (see below).
-
-- **Borderline.** Output: "borderline — partial argument. Path to acceptance:
-  <concrete next step>." Default disposition: don't reopen. Ask: "revise, or
-  override?"
-
-**Adjacent-not-reopen detection.** Before rendering the verdict, check
-whether the user's reason is actually about the resolved question or
-adjacent. If adjacent, output: "your reason isn't about thread #N's
-resolution — it's a separate concern. Open a new thread under [Layer]?"
-(suggest `--new-thread --layer <X>`).
-
-**Override and record.** If the user overrides a "doesn't hold" or
-"borderline" verdict:
-
+**Override marker** (when overriding doesn't-hold/borderline):
 ```
-[review-pr / <layer> / open * override: gatekeeper rejected]
+<layer> / open · override: gatekeeper rejected — <short headline>
 
-The gatekeeper rejected this reopen as "<bucket-failure>", but I'm overriding
-because [user's reason]. Other participants are welcome to weigh in.
+The gatekeeper rejected this reopen as "<basis>", but I'm overriding because
+[user's reason]. Others welcome to weigh in.
 
 [user's full reason]
 
 Reference: thread #<N>'s resolution at <date>.
 ```
-
-Show draft, ask y/n/edit, post on confirmation as a reply to the thread's
-root comment:
+Show draft, `(y)es, (n)o, (e)dit?`, post as a reply to the thread root. Note the
+two endpoints take **different identifiers** (don't confuse them):
+- the REST replies endpoint takes the **root review comment's numeric
+  `databaseId`** (the `#discussion_r<N>` value the user passed to reopen) —
+  call it `<root-comment-databaseId>`;
+- the GraphQL mutation takes the **opaque thread id** (`PRRT_…`) — call it
+  `<thread-node-id>` — mapped from that numeric id via the Step 2 query.
 ```bash
-gh api repos/<REPO>/pulls/<PR>/comments/<thread-id>/replies -f body="<COMMENT>"
+gh api repos/<REPO>/pulls/<PR>/comments/<root-comment-databaseId>/replies -f body="<COMMENT>"
 ```
-(`<thread-id>` is the numeric `databaseId` of the first comment in the thread —
-the same value the user supplied to `--reopen`. This keeps the reopen inside
-the existing review thread rather than posting it as a top-level issue comment.)
-
-**After posting, actually unresolve the GitHub thread.** A reopen comment
-that leaves the GitHub-side thread marked `isResolved: true` is misleading
-— the next reviewer's UI will still show it as a closed conversation, and
-the categorizer's GitHub `isResolved` short-circuit (Step 3 step 2) would
-keep classifying it as `resolved` even though the conversation is open.
-Call the GraphQL mutation:
-
+**Then actually unresolve** (else the UI + categorizer still see it closed):
 ```bash
-gh api graphql -f query='mutation { unresolveReviewThread(input: {threadId: "<THREAD_ID>"}) { thread { isResolved } } }'
+gh api graphql -f query='mutation { unresolveReviewThread(input: {threadId: "<thread-node-id>"}) { thread { isResolved } } }'
 ```
+Verify `isResolved: false`; if not, tell the user the comment posted but the
+thread didn't reopen. Delete the draft file on success.
 
-`<THREAD_ID>` is the GraphQL opaque id mapped from the user-supplied
-numeric id (see "Identifier semantics" above). Verify the response shows
-`isResolved: false`; if not, surface the error to the user — the comment
-posted but the thread didn't actually reopen, which they need to know.
+### Start a new thread (only for genuinely new ground)
 
-### `--new-thread --layer <name>` mode
+Reached when the governing-rule check confirms no existing thread covers the
+`(layer, aspect)`. Two ways the topic arrives:
 
-Ask: "what's the discussion topic at the <layer> layer? (full prose)"
+**User supplied a topic.** Ask **(prose):** "what's the topic?" The runtime scans
+the grounding artifacts + the relevant layer catalog and supplies its
+observations (the layer, the named concern) for the user to react to.
 
-Optional: ask for a cross-layer reference if the new thread depends on a
-settled higher-layer thread. If user provides one, validate it (must be a
-real thread id with status `resolved` at a higher-numbered layer than the
-new thread's layer; warn otherwise).
+**Command proposed it.** From the landing view's "proposed topics" the user
+picked (or asked to be shown candidates). The scan reads the artifacts against
+the layer catalogs and surfaces candidates as a **multi-select** triage
+(`AskUserQuestion`, or numbered text fallback), each line `(confidence) layer —
+short headline`, sorted high→low. Two hard rules on the scan:
+- **No laundering** (the no-Copilot-aspect rule): if a candidate reduces to a
+  code-level defect, drop it — it's Copilot's lane. Never reference Copilot as a
+  contrast in a candidate; needing "distinct from Copilot's X" is the tell it's
+  laundered.
+- **Pre-filter to new ground:** drop any candidate already covered by an existing
+  thread (governing rule). The proposed list therefore clusters at the gap
+  layers (those with no threads yet).
 
-Draft the new thread's top-level comment with header
-`[review-pr / <layer> / open]` (and optional `-> ref: ...` line). Show
-draft, ask y/n/edit, post via:
+Multiple checks **queue** (they do not bundle into one comment — one-topic rule):
+the runtime walks the checked topics one at a time, opening a separate comment
+for each, showing "topic N of M". `(n)o` between topics backs out; not-yet-opened
+ones are reported as remaining.
 
+**Topic/headline formula (violation + impact + what's-now, SHORT).** The
+headline names: (1) the violation — the concern/flaw; (2) the impact — why it
+costs something; (3) what's-now — the current design state being challenged —
+compressed to one scannable line. The full prose goes in the body. Example
+headline: *"TokenService bundles 5 roles; cleanup can break rotation."* Body
+then expands the violation, the impact, and what the doc currently commits to.
+
+**Enforce one-topic-per-comment.** If the supplied topic bundles two+ aspects,
+do not draft a multi-topic comment: name each, ask which single one to open now;
+the rest are offered as follow-ups.
+
+Draft the top-level comment with first-line tag `<layer> / open — <short
+headline>` then the body (and optional `-> ref: <layer> / <status> thread #N`
+line if it depends on a settled higher-layer thread — validate the ref is a real
+resolved thread at a higher layer). Write to the draft file. Show, `(y)es, (n)o,
+(e)dit?`, post:
 ```bash
 gh api repos/<repo>/issues/<PR>/comments -f body="<draft>"
 ```
-(General PR comment, not inline review — new threads are top-level.)
+Delete the draft file on success; update active-context's `current`.
 
-After posting, update active-context's `current` to the new thread.
+### Active contexts list (`--list`)
 
-### `--list` mode
+Internal/optional. Read `active-context.json`; for each `recent` entry (≤10)
+refetch thread state (Copilot-filtered) and print, marking `current` with `*`,
+"last seen" as relative time. Same `<resolved>/<active>` counters as the
+statusline (the second number is `open` + `proposing`, per Step 4). If none: "no
+active discussions yet — give me a PR to look at."
 
-Read `~/.cache/goodies-review/active-context.json`. For each entry in
-`recent` (up to 10), refetch the PR's thread state and print:
+### Status (`--status`)
 
-Counter format is the same as the statusline: `<resolved>/<open>` per
-layer, with actual integers at runtime (the `<r>/<o>` placeholders below
-are spec syntax, never emitted literally):
+Internal/optional. Print the statusline for `current` only. If none: "no active
+discussion yet."
 
-```
-+- goodies-review * active contexts -------------------------------------+
-|                                                                         |
-| * <repo>#<PR> * <title>                                  [last: 2m ago]|
-|   problem <r>/<o> * direction <r>/<o> * design <r>/<o> * tradeoff <r>/<o> * impl <r>/<o> |
-|                                                                         |
-|   ...                                                                   |
-|                                                                         |
-+- * = current * switch via /goodies-review <repo>#<pr> -----------------+
-```
+## Comment header reference
 
-Concrete worked example with real numbers:
-```
-+- goodies-review * active contexts -------------------------------------+
-|                                                                         |
-| * optibot#125 * B9 optimization loop design          [last: 2m ago]    |
-|   problem 0/0 * direction 2/0 * design 3/8 * tradeoff 0/0 * impl 13/0  |
-|                                                                         |
-|   goodies#42 * --feedback flag                       [last: 1h ago]    |
-|   problem 0/1 * direction 0/0 * design 0/2 * tradeoff 0/0 * impl 0/0   |
-|                                                                         |
-+- * = current * switch via /goodies-review <repo>#<pr> -----------------+
-```
-
-Mark the `current` entry with `*`. "last seen" is rendered as relative time.
-
-If active-context.json doesn't exist or has no recent entries, output:
-"no active contexts. Try /goodies-review <PR> to start one."
-
-### `--status` mode
-
-Read active-context. Print the statusline for `current` (without summary
-listing). If no current, output: "no active context. Try /goodies-review
-<PR> to start one."
-
-## Worked example
-
-Walking through optibot#125 (a real PR's discussion shape):
+Tool-emitted comments lead with a **plain tag** — no `review-pr` prefix:
 
 ```
-$ /goodies-review optibot#125
-
-[banner — first invocation]
-
-+- intel-sandbox/os.linux.pnp.optibot#125 -- docs(optimization): B9 ... -+
-| summary view -- 5 layers, 23 threads total                              |
-| problem 0/0 * direction 0/0 * design 0/0 * tradeoff 0/0 * impl 23/23   |
-+-------------------------------------------------------------------------+
-
-PROBLEM (0 threads)
-DIRECTION (0 threads)
-DESIGN (0 threads)
-TRADEOFF (0 threads)
-IMPLEMENTATION (23 threads, 23 resolved)
-  [resolved] #3411232501 by @Copilot [inferred] -- "Flow A's Workload.score events..."
-  [resolved] #3411232525 by @Copilot [inferred] -- "Flow E's Workload.score events..."
-  ... (21 more, all Copilot inline findings, all addressed)
-
-Hint: PROBLEM/DIRECTION/DESIGN/TRADEOFF have no threads. The PR's discussion
-has been entirely at the implementation layer (Copilot findings). For a
-broader review on direction or design, /goodies-review optibot#125 --new-thread
---layer <name>.
+<layer> / <status> — <short headline>
 ```
 
-The hint surfaces what the hierarchy reveals: this PR has had no
-human-expert engagement at the higher layers. That's a fact, not a judgment
-— but it's the kind of fact that's useful to see at a glance before merging
-a major design-doc PR.
-
-### Worked example: gatekeeper at work
-
+With a cross-layer reference:
 ```
-$ /goodies-review optibot#125 --reopen 3411232637
-
-[statusline]
-
-Thread #3411232637's resolution context:
-  Original (Copilot): "expected_delta type inconsistency..."
-  Resolution (Tianyou): "Fixed in 78462a6. Picked one representation:
-                        expected_delta is object<string, number>..."
-
-What's your reason for reopening?
-> The number-only constraint is too strict — what if a metric needs a
-  range (e.g. 'IPC delta in [+0.2, +0.5]')?
-
-Gatekeeper evaluating...
-
-VERDICT: doesn't hold.
-  Bucket failure: this is speculation without instances. The reason cites a
-  hypothetical ("what if a metric needs..."), not a real workload that
-  requires range-typed deltas. The original thread's resolution explicitly
-  rejected ranges as untestable; for a reopen, you'd need a concrete
-  workload where range-typed deltas would be honest *and* testable.
-
-Path to acceptance: cite a workload (real or about-to-ship) where
-range-typed deltas are necessary and the testability concern can be met.
-
-Revise reason, or override (drop the gatekeeper's decision and post anyway)?
-> revise
-
-What's your revised reason?
-> ...
+design / open — <short headline>
+-> ref: problem / resolved thread #N
 ```
 
-The gatekeeper's job is to surface what's missing. Override is always
-available; the rejection is a prompt to think, not a wall.
-
-## Loose-format header reference
-
-Tool-emitted comment headers:
-
+With an override marker:
 ```
-[review-pr / <layer> / <status>]
-```
-
-With cross-layer reference:
-
-```
-[review-pr / design / open] -> ref: [problem / resolved] thread #N
-```
-
-With override marker:
-
-```
-[review-pr / <layer> / <status> * override: gatekeeper rejected]
+<layer> / open · override: gatekeeper rejected — <short headline>
 ```
 
 Layers: `problem`, `direction`, `design`, `tradeoff`, `implementation`.
-Statuses: `open`, `proposing`, `resolved`, `deferred`.
+Statuses: `open`, `proposing`, `resolved`, `deferred`. The headline carries
+violation + impact + what's-now (short); detail goes in the body. Copilot and
+free-form human comments need no tag — inference handles them. (Legacy
+`[review-pr / layer / status]` headers are still parsed on read for back-compat,
+but never emitted.)
 
-Other tools (Copilot, free-form human comments) need not include the header —
-the inference fallback handles them.
+## Worked example
+
+```
+$ /goodies-review acme/api#214
+
+Let's look at acme/api#214 — "feat(auth): add refresh-token rotation" — together.
+
+Existing discussion
+  1  (high)    direction · @marcus · proposing — rotation-every-use vs sliding-expiry; mobile flakiness weighed?
+  2  (medium)  problem   · @priya  · open        — is replay the real threat model, or a hypothetical?
+  3  (medium)  tradeoff  · @priya  · open        — 30-day TTL × rotation grows token families without bound
+
+Proposed topics (new ground not yet discussed)
+  4  (medium)  design    · new                   — TokenService bundles 5 roles; cleanup can break rotation
+
+  how sure:  (high) checked, holds up · (medium) worth raising, uncertain ·
+             (low) a hunch, your call
+
+(3 Copilot code-review threads set aside — that's Copilot's lane.)
+
+Type a number to dig in, or just say what's on your mind:
+> 2
+
+  Existing discussion · problem · open                       (how sure: medium)
+
+  @priya: "is replay actually our threat model, or are we solving a hypothetical?"
+  (no replies yet)
+
+  What's your position?
+> replay is real — we had the token-leak incident in March. (also the 30-day
+  TTL makes the family-growth problem worse than the doc admits)
+
+  Two aspects in there. This thread is about the problem, so the reply stays on
+  that; the TTL point is @priya's open tradeoff thread (#3) — I'll offer it there
+  after we post.
+
+  +- draft reply * problem / open -- replay is real: March token-leak incident -+
+  | Replay isn't hypothetical -- the March token-leak incident is a concrete     |
+  | instance, and it's the harm the problem statement was missing. Suggest we    |
+  | name it explicitly and treat the problem as settled.                         |
+  +------------------------------------------------------------------------------+
+
+  Post this reply?   (y)es, (n)o, (e)dit?
+> y
+  [posted ✓]
+
+  The held TTL point belongs with @priya's open tradeoff thread (#3). Add it
+  there?   (y)es, (n)o?
+```
+
+This shows the spine: Copilot threads filtered; two-group landing with unified
+numbering; conversational entry; the on-topic reply stays scoped while the
+off-topic aspect is held and routed to its *existing* thread (governing rule);
+plain tags with violation-impact headlines; `(y)es, (n)o, (e)dit?` confirms.
 
 ## Error and edge cases
 
-- **Closed/merged PR:** read-only modes proceed; mutating modes refuse.
-- **Empty PR (no comments yet):** all layers show `0/0`. `--engage` outputs
-  "no open threads to engage." `--new-thread` works normally.
-- **Network failure mid-engagement:** save the user's drafted reply to
-  `~/.cache/goodies-review/draft-<repo-slug>-<pr>-<thread>.txt` (where
-  `<repo-slug>` replaces `/` with `_`, e.g. `owner_repo`) so they can retry.
-- **GraphQL pagination:** always paginate; PRs with >100 threads must work.
+- **Closed/merged PR:** landing view proceeds; posting refuses.
+- **Empty PR (no human threads):** all layers `0/0`; landing offers proposed
+  topics from the doc scan, or "nothing on the PR yet — want me to surface
+  topics from the design doc?"
+- **All threads are Copilot's:** existing-discussion group is empty; say "only
+  Copilot code-review threads here — those are Copilot's lane. Want me to
+  surface higher-layer topics from the design doc?"
+- **Draft interrupted (back-out or network failure):** the draft file persists;
+  returning to that item resumes it. Deleted on successful post or session end.
+- **GraphQL pagination:** always paginate; >100 threads must work.
 - **gh auth not configured:** error with a hint to run `gh auth login`.
-- **Banner state file missing:** create with `0`, treat as first invocation.
-- **Active-context state file missing:** treat as no recent contexts.
+- **State files missing:** banner-count → create `0`; active-context → no recent
+  contexts.
