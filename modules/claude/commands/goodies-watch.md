@@ -354,9 +354,9 @@ Skip if the comment ID is not in the map (thread already resolved or comment del
 
 ## Push timing (throttle prevention)
 
-When branch protection rules include Copilot review-on-push, pushing within ~5 minutes of the last Copilot review or the last push (whichever is later) may cause Copilot to skip re-review entirely. This is a GitHub-side rate limit, not configurable.
+When branch protection rules include Copilot review-on-push, pushing too soon after the last Copilot review or the last push (whichever is later) can cause Copilot to skip re-review entirely. We enforce a short gap to stay clear of that window. The gap is **30 seconds** — in practice the earlier 5-minute gap was far more conservative than necessary, and a 30s spacing has been enough to let the re-review trigger reliably while keeping the fix→push loop fast.
 
-**Before every push**, ensure at least 5 minutes have passed since the later of (last Copilot review completion, last push received by GitHub). All timestamps come from GitHub's servers to avoid local clock skew:
+**Before every push**, ensure at least 30 seconds have passed since the later of (last Copilot review completion, last push received by GitHub). All timestamps come from GitHub's servers to avoid local clock skew:
 
 1. Get the latest review completion timestamp (comment `created_at` as primary, review `submitted_at` as fallback). Emit one value per item and compute max in shell to avoid per-page sort issues:
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
@@ -378,7 +378,7 @@ When branch protection rules include Copilot review-on-push, pushing within ~5 m
 
 5. Compute seconds elapsed since the reference time using GitHub's clock:
   ELAPSED=$(jq -rn --arg ref "$REF_TIME" --arg now "$GH_NOW" '($now | fromdateiso8601) - ($ref | fromdateiso8601)')
-  REMAINING=$((300 - ELAPSED))
+  REMAINING=$((30 - ELAPSED))
 
 6. If REMAINING is greater than 0, report: "Waiting $REMAINING seconds before pushing to avoid Copilot throttle..." then run the delayed push in the background and capture the PID:
 
@@ -409,7 +409,7 @@ When branch protection rules include Copilot review-on-push, pushing within ~5 m
 **Rules:**
 - Always batch fixes into a single commit/push (see Case B above).
 - Never push incrementally per finding.
-- Always enforce the 5-minute gap from the later of (last review, last push) using GitHub's server clock for "now". This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
+- Always enforce the 30-second gap from the later of (last review, last push) using GitHub's server clock for "now". This ensures the push doesn't land in Copilot's throttle window regardless of whether the review arrived quickly or slowly.
 - Run the delay + push in the background so the assistant stays available for interaction during the wait.
 - Never reply to comments or resolve threads until the push has been verified successful.
 ```
