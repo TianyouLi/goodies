@@ -24,6 +24,8 @@ teardown() {
     [ "$(readlink "$HOME/.claude/commands/goodies-distill.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-distill.md" ]
     [ -L "$HOME/.claude/commands/goodies-bkm.md" ]
     [ "$(readlink "$HOME/.claude/commands/goodies-bkm.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-bkm.md" ]
+    [ -L "$HOME/.claude/commands/goodies-review.md" ]
+    [ "$(readlink "$HOME/.claude/commands/goodies-review.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-review.md" ]
 }
 
 @test "claude module installs snippets symlink" {
@@ -53,6 +55,25 @@ teardown() {
     [ -L "$HOME/.claude/commands/goodies-watch.md" ]
     [ -L "$HOME/.claude/commands/goodies-distill.md" ]
     [ -L "$HOME/.claude/commands/goodies-bkm.md" ]
+    [ -L "$HOME/.claude/commands/goodies-review.md" ]
+}
+
+@test "goodies-review command markdown contains required sections" {
+    # Guard against accidental removal of key sections from the command
+    # markdown. These are the structural anchors the LLM runtime depends on.
+    grep -qF "Run the gatekeeper" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+    grep -qF "[review-pr /" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+    grep -qF "First-time banner" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+    grep -qF "active-context.json" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+    grep -qF "allowed-tools:" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+    grep -qF "confidence:" "$GOODIES_ROOT/modules/claude/commands/goodies-review.md"
+}
+
+@test "goodies-review design doc declares 5-layer hierarchy" {
+    # Guard the design doc separately from the command markdown so a failure
+    # makes it obvious which file regressed.
+    grep -qF "5-layer hierarchy" "$GOODIES_ROOT/docs/design/goodies-review.md" || \
+        grep -qF "5 layers" "$GOODIES_ROOT/docs/design/goodies-review.md"
 }
 
 @test "tampermonkey copilot click-trigger userscript exists with valid metadata" {
