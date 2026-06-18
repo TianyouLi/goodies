@@ -26,6 +26,20 @@ teardown() {
     [ "$(readlink "$HOME/.claude/commands/goodies-bkm.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-bkm.md" ]
     [ -L "$HOME/.claude/commands/goodies-review.md" ]
     [ "$(readlink "$HOME/.claude/commands/goodies-review.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-review.md" ]
+    [ -L "$HOME/.claude/commands/goodies-feedback.md" ]
+    [ "$(readlink "$HOME/.claude/commands/goodies-feedback.md")" = "$GOODIES_ROOT/modules/claude/commands/goodies-feedback.md" ]
+}
+
+@test "claude module installs every goodies-*.md command by glob (no hand list)" {
+    # Guards the 'automatic for new commands' property: the installer must
+    # symlink ALL commands/goodies-*.md, so a future command is installed
+    # without editing install.sh. Compare the source set to the linked set.
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    for src in "$GOODIES_ROOT"/modules/claude/commands/goodies-*.md; do
+        local base; base="$(basename "$src")"
+        [ -L "$HOME/.claude/commands/$base" ]
+        [ "$(readlink "$HOME/.claude/commands/$base")" = "$src" ]
+    done
 }
 
 @test "claude module installs snippets symlink" {
@@ -46,6 +60,93 @@ teardown() {
 @test "claude module creates required directories" {
     bash "$GOODIES_ROOT/modules/claude/install.sh"
     [ -d "$HOME/.claude/commands" ]
+}
+
+@test "claude module installs goodies-feedback trigger into CLAUDE.md" {
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    [ -f "$HOME/.claude/CLAUDE.md" ]
+    grep -qF "BEGIN goodies-feedback" "$HOME/.claude/CLAUDE.md"
+    grep -qF "END goodies-feedback" "$HOME/.claude/CLAUDE.md"
+    # Keyed off the namespace, and routes to the shared command.
+    grep -qF 'goodies-*' "$HOME/.claude/CLAUDE.md"
+    grep -qF "/goodies-feedback" "$HOME/.claude/CLAUDE.md"
+}
+
+@test "goodies-feedback trigger block is idempotent (no duplication on re-install)" {
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    local n; n=$(grep -c "BEGIN goodies-feedback" "$HOME/.claude/CLAUDE.md")
+    [ "$n" -eq 1 ]
+}
+
+@test "goodies-feedback trigger re-install works without python3 (awk path)" {
+    # The re-install (block-refresh) path must not depend on python3 — minimal
+    # systems may lack it. Mask python3/python from PATH and confirm a re-install
+    # still refreshes the single block idempotently and exits success.
+    bash "$GOODIES_ROOT/modules/claude/install.sh"   # first install
+    local shim; shim="$(mktemp -d)"
+    cat > "$shim/python3" <<'SH'
+#!/bin/sh
+echo "python3 should not be called by install.sh" >&2
+exit 127
+SH
+    cp "$shim/python3" "$shim/python"
+    chmod +x "$shim/python3" "$shim/python"
+    PATH="$shim:$PATH" run bash "$GOODIES_ROOT/modules/claude/install.sh"
+    rm -rf "$shim"
+    [ "$status" -eq 0 ]
+    local n; n=$(grep -c "BEGIN goodies-feedback" "$HOME/.claude/CLAUDE.md")
+    [ "$n" -eq 1 ]
+    grep -qF "END goodies-feedback" "$HOME/.claude/CLAUDE.md"
+}
+
+@test "goodies-feedback trigger preserves pre-existing CLAUDE.md content" {
+    mkdir -p "$HOME/.claude"
+    printf '# my notes\n\nkeep this line\n' > "$HOME/.claude/CLAUDE.md"
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    grep -qF "keep this line" "$HOME/.claude/CLAUDE.md"
+    grep -qF "BEGIN goodies-feedback" "$HOME/.claude/CLAUDE.md"
+}
+
+@test "goodies-feedback trigger refresh handles indented markers" {
+    # The awk refresh matches markers anywhere on the line (not just column 1),
+    # so a marker indented by a user/formatter is still replaced rather than
+    # silently left stale + duplicated. Indent the installed markers, re-install,
+    # and confirm exactly one (un-indented) block results.
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    sed -i.bak 's/^<!-- BEGIN goodies-feedback/    <!-- BEGIN goodies-feedback/; s/^<!-- END goodies-feedback/    <!-- END goodies-feedback/' "$HOME/.claude/CLAUDE.md" && rm -f "$HOME/.claude/CLAUDE.md.bak"
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    local n; n=$(grep -c "BEGIN goodies-feedback" "$HOME/.claude/CLAUDE.md")
+    [ "$n" -eq 1 ]
+    # the refreshed block is emitted at column 1 (no stale indented marker left)
+    ! grep -qE '^[[:space:]]+<!-- BEGIN goodies-feedback' "$HOME/.claude/CLAUDE.md"
+}
+
+@test "goodies-feedback refresh does not truncate on BEGIN-without-END" {
+    # If the managed block is malformed (BEGIN present, END missing), the awk
+    # refresh must NOT drop everything after BEGIN to EOF. It should bail
+    # (END{} exit 1 -> refresh fails) and leave the file intact, preserving the
+    # user's content that followed the dangling BEGIN.
+    bash "$GOODIES_ROOT/modules/claude/install.sh"
+    # remove the END marker, then append user content after the dangling block
+    sed -i.bak '/END goodies-feedback/d' "$HOME/.claude/CLAUDE.md" && rm -f "$HOME/.claude/CLAUDE.md.bak"
+    printf '\n# IMPORTANT USER CONTENT\nkeep me\n' >> "$HOME/.claude/CLAUDE.md"
+    run bash "$GOODIES_ROOT/modules/claude/install.sh"
+    # install.sh ends with `true`, so overall exit is 0; the guarantee we assert
+    # is that the user content survived (no truncation) and no temp file leaked.
+    grep -qF "keep me" "$HOME/.claude/CLAUDE.md"
+    [ -z "$(ls "$HOME/.claude/CLAUDE.md.goodies."* 2>/dev/null)" ]
+}
+
+@test "goodies-feedback command markdown contains required sections" {
+    local f="$GOODIES_ROOT/modules/claude/commands/goodies-feedback.md"
+    [ -f "$f" ]
+    grep -qF "allowed-tools:" "$f"
+    grep -qF "gh issue create" "$f"
+    grep -qF "reactions" "$f"          # the vote mechanism
+    grep -qF "cmd:" "$f"               # per-command label scoping
+    grep -qF '(y)es, (n)o, (e)dit' "$f" # confirm-before-post
 }
 
 @test "claude module install is idempotent" {
