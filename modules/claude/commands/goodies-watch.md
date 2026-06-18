@@ -243,15 +243,15 @@ Compare: `echo "$LAST_PUSH $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdatei
 
 Decide:
 
-1. **PUSH_AGE < 900 (within 15 minutes):** Output nothing and stop — keep polling to give Copilot time.
+1. **PUSH_AGE < 180 (within 3 minutes):** Output nothing and stop — keep polling to give Copilot time.
 
-2. **PUSH_AGE >= 900:** The push didn't draw an auto-triggered review within 15 minutes. Step 0 (the userscript handshake) should have already posted a marker if all gates were satisfied — check the PR body for our WATCHER_ID's marker.
+2. **PUSH_AGE >= 180:** The push didn't draw an auto-triggered review within 3 minutes. Step 0 (the userscript handshake) should have already posted a marker if all gates were satisfied — check the PR body for our WATCHER_ID's marker.
 
    - **If our marker is still in the PR body and unexpired:** the userscript hasn't acted yet (browser tab not open, userscript not installed, or browser-side click failed). Continue to Step 0j-style timeout fallback when the marker expires. Output nothing this poll.
 
    - **If our marker WAS posted but has been stripped or expired without a state change:** the handshake didn't deliver. Surface to the user (per [[feedback_copilot_review_manual_trigger]] — goodies-managed and intel-sandbox repos have unreliable subsequent-push triggers; never auto-retry force-push):
 
-     "Push at <LAST_PUSH> didn't draw a Copilot review after >15 min on PR #<NUMBER>. Two likely causes:
+     "Push at <LAST_PUSH> didn't draw a Copilot review after 3+ min on PR #<NUMBER>. Two likely causes:
        [a] Userscript not installed / browser tab not open → click 'Request review' on Copilot manually
        [b] Skip — this push doesn't need re-review (revisit later)
       Which?"
