@@ -1,6 +1,10 @@
 #!/bin/bash
 # Claude Code environment — sourced via ~/.bashrc.d/
 
+# Absolute path to goodies scripts dir — resolved at source-time, not install-time
+export GOODIES_SCRIPTS
+GOODIES_SCRIPTS="$(cd "$(dirname "$(python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "${BASH_SOURCE[0]}")")/scripts" && pwd)"
+
 if alias claude &>/dev/null; then
     if [[ -t 0 && -t 1 ]]; then
         echo "Warning: 'claude' is already defined as an alias: $(alias claude)" >&2
