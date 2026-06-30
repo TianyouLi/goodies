@@ -29,13 +29,12 @@ Watch the current branch's PR for new Copilot reviews and present findings as th
 ```
 Watch PR #<NUMBER> for new Copilot reviews.
 
-## Step 0: Maybe trigger Copilot review via userscript handshake
+## Step 0: Maybe trigger Copilot review
 
-The Tampermonkey userscript at modules/claude/scripts/tampermonkey/copilot-request-review.user.js (v1.3+) clicks the Copilot "Re-request review" button on demand from this watcher. The handshake: this watcher posts a `<details>` marker stanza in the PR body (visible as a small "▸ goodies-watch handshake" expando — HTML comments would be invisible but get stripped during markdown render, so we use `<details>` which survives sanitization). The userscript scans the rendered PR description DOM for the marker (zero gh API calls), clicks the button, then this watcher observes the resulting state change via gh API and strips its own marker.
+This step decides whether to request a Copilot review BEFORE the existing review-watching logic runs. It uses a two-tier strategy:
 
-This step decides whether to post / refresh / strip a marker BEFORE the existing review-watching logic runs. It's gh-API-only — no DOM heuristics needed because the API exposes everything except the click itself.
-
-See `docs/design/userscripts-copilot-watch-handshake.md` for the full architectural rationale.
+1. **Primary: API request** — discover Copilot's exact reviewer login (from currently requested reviewers, past review history, or repo assignees), then call the requested_reviewers endpoint directly. This requires no browser, no userscript, no markers in the PR body.
+2. **Fallback: Tampermonkey userscript handshake** — if the API request fails (403, permission error, or org policy blocks it), fall back to the marker-based handshake described in `docs/design/userscripts-copilot-watch-handshake.md`.
 
 ### Watcher identity
 
@@ -58,7 +57,8 @@ Step 0b: Is Copilot a requested reviewer?
   COPILOT_EVER_COUNT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '.[].user.login' | grep -ic '^copilot' || true)
   COPILOT_EVER=$([ "$COPILOT_EVER_COUNT" -gt 0 ] && echo true || echo false)
 
-  If neither current-reviewer nor ever-reviewed → strip our marker if present, exit Step 0.
+  If neither current-reviewer nor ever-reviewed → skip directly to Step 0h
+  (this is a fresh PR that needs Copilot requested for the first time).
 
 Step 0c: Is a review currently pending?
   If COPILOT_REVIEWER==true (still in pending/in-flight state) → strip our marker (auto-trigger handled it; userscript click is no longer needed), exit Step 0.
@@ -99,27 +99,64 @@ Step 0g: Are all those comments resolved or outdated?
 
   If all dealt with → expected_to_act=YES, continue.
 
-Step 0h: Post a FRESH marker (always — replace any of OUR existing).
-  On every poll where Steps 0a–0g all said "act", we generate a NEW
-  nonce and replace any existing marker WITH OUR `WATCHER_ID`. We
-  never strip markers written by other watchers — they're independent
-  requests, and the userscript clicks once per (writer, nonce) so
-  parallel watchers stay coordinated naturally. This is intentional:
+Step 0h: Request Copilot review (API-first with userscript fallback).
 
-  - The userscript records `(writer, nonce)` after acting and refuses
-    to re-click the same `(writer, nonce)`. If the previous round's
-    click landed but didn't trigger Copilot's queue (rare org-policy
-    edge case), the script can never retry — UNLESS we issue a fresh
-    nonce. Refreshing each poll guarantees the script sees a new
-    request and re-attempts.
-  - If a previous marker hasn't been acted on yet (browser tab not
-    open, userscript missed it), refreshing replaces it with a
-    longer-validity marker — better than letting an old one expire.
-  - The watcher won't reach Step 0h unless the gates say "act"
-    (Step 0c will strip the marker on pending; Step 0e will strip
-    on review fresh; Step 0f on LGTM; Step 0g on open threads).
-    So "always replace" only fires when a fresh request is genuinely
-    needed.
+  **Primary path: direct API request**
+
+  First, discover Copilot's exact reviewer login (the name varies —
+  `copilot-pull-request-reviewer[bot]`, `Copilot`, etc. — so we resolve
+  it dynamically rather than hardcoding). Try three sources in order:
+
+  1. Currently requested reviewers on this PR:
+    COPILOT_LOGIN=$(gh api repos/<REPO>/pulls/<NUMBER>/requested_reviewers \
+      --jq '.users[].login' 2>/dev/null | grep -i 'copilot' | head -1 || true)
+
+  2. Past review history (login used in submitted reviews):
+    if [ -z "$COPILOT_LOGIN" ]; then
+      COPILOT_LOGIN=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews \
+        --jq '.[].user.login' | grep -i 'copilot' | head -1 || true)
+    fi
+
+  3. Repo-level assignable users, or fall back to the known common name:
+    if [ -z "$COPILOT_LOGIN" ]; then
+      COPILOT_LOGIN=$(gh api --paginate repos/<REPO>/assignees --jq '.[].login' 2>/dev/null \
+        | grep -i 'copilot' | head -1 || true)
+    fi
+    if [ -z "$COPILOT_LOGIN" ]; then
+      COPILOT_LOGIN="copilot-pull-request-reviewer[bot]"
+    fi
+
+  Now request the review (wrapped to prevent set -e from aborting on
+  expected failures like 403/404 — the fallback path must always run):
+    if API_RESPONSE=$(gh api repos/<REPO>/pulls/<NUMBER>/requested_reviewers \
+      -X POST -f "reviewers[]=$COPILOT_LOGIN" 2>&1); then
+      API_EXIT=0
+    else
+      API_EXIT=$?
+    fi
+
+  Check success: exit code 0 AND response contains a requested_reviewers
+  entry with a login matching "copilot" (case-insensitive). Default to
+  "false" if jq fails (e.g. non-JSON error response from gh):
+    API_SUCCESS=$(echo "$API_RESPONSE" | jq -r \
+      '[.requested_reviewers[]?.login | test("copilot"; "i")] | any' 2>/dev/null || echo "false")
+
+  If API_EXIT == 0 AND API_SUCCESS == "true":
+    → Report (only on FIRST successful request of a session):
+      "Requested Copilot review on PR #<NUMBER> via API (reviewer: $COPILOT_LOGIN)."
+    → Exit Step 0.
+
+  **Fallback path: Tampermonkey userscript handshake**
+
+  If the API request failed (non-zero exit, 403, 422, or response doesn't
+  confirm Copilot in requested_reviewers), fall back to the marker-based
+  userscript handshake. Report (once per session): "API review request
+  failed (likely org policy); falling back to userscript handshake."
+
+  Post a FRESH marker (always — replace any of OUR existing). We never
+  strip markers written by other watchers — they're independent requests,
+  and the userscript clicks once per (writer, nonce) so parallel watchers
+  stay coordinated naturally.
 
   EXPIRES should come from GitHub's clock to avoid drift when the
   watcher machine's local clock differs from the browser's clock.
@@ -129,32 +166,14 @@ Step 0h: Post a FRESH marker (always — replace any of OUR existing).
   GitHub response Date header) to compute EXPIRES:
     GH_NOW=$(gh api repos/<REPO> --include 2>&1 | grep -i '^date:' | sed 's/^[Dd]ate: //' | python3 -c "import sys,email.utils,datetime; d=email.utils.parsedate_to_datetime(sys.stdin.read().strip()); print(d.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))")
 
-  Marker form: <details>...</details> (NOT <!-- ... --> — those get
-  stripped during markdown→HTML render so DOM scan can't see them).
-  The <details> structure survives sanitization; userscript reads
-  textContent and matches the payload regex inside.
-
     NONCE=$(openssl rand -hex 4 2>/dev/null || head -c 8 /dev/urandom | xxd -p)
     EXPIRES=$(jq -rn --arg now "$GH_NOW" '($now | fromdateiso8601) + 600 | todateiso8601')
     MARKER_PAYLOAD="goodies-watch:click-request-review nonce=$NONCE expires=$EXPIRES writer=$WATCHER_ID"
     MARKER_BLOCK=$(printf '<details><summary>goodies-watch handshake (writer=%s)</summary>\n\n%s\n</details>' "$WATCHER_ID" "$MARKER_PAYLOAD")
 
     OLD_BODY=$(gh api repos/<REPO>/pulls/<NUMBER> --jq .body)
-    # Strip ONLY our own marker blocks (matched by writer=$WATCHER_ID
-    # in the payload line). Other watchers' live markers stay in
-    # place — they're independent requests, and the userscript
-    # correctly handles multi-marker bodies by acting on the
-    # freshest unacted (writer,nonce) pair.
-    #
-    # The strip pattern uses Python so we can match across newlines
-    # (the <details> block spans 3+ lines). It strips a complete
-    # <details>...</details> block whose payload includes our writer
-    # ID. Prose mentioning the marker payload is preserved (it
-    # wouldn't be inside a <details>).
-    # WATCHER_ID is passed via env var (not string-interpolated into the
-    # -c code) so special shell/regex characters in WATCHER_ID can't
-    # corrupt the Python source. re.escape() prevents any regex metachar
-    # in WATCHER_ID from over-matching.
+    # Strip ONLY our own marker blocks (matched by writer=$WATCHER_ID).
+    # WATCHER_ID is passed via env var so special chars can't corrupt Python.
     NEW_BODY=$(printf '%s' "$OLD_BODY" | WATCHER_ID="$WATCHER_ID" python3 -c '
 import sys, re, os
 b = sys.stdin.read()
@@ -173,12 +192,12 @@ sys.stdout.write(b)
   silently (don't spam the user every 3 min).
 
 Step 0i: Implicit ack via gh API state change.
-  Each subsequent poll re-evaluates Step 0a–0g. The handshake works
-  because Step 0c sees pending and strips, OR Step 0e sees a new
-  review submitted_at and strips. No explicit ack from the
-  userscript needed.
+  Each subsequent poll re-evaluates Step 0a–0g. Both paths (API and
+  handshake) converge here: Step 0c sees Copilot pending and exits.
 
-Step 0j: Timeout fallback.
+Step 0j: Timeout fallback (only for userscript handshake path).
+  If the API path succeeded, this step is skipped entirely.
+
   If we've posted markers across multiple polls (>= 3 polls = ~9 min)
   and the gates STILL say "act" (no pending, no new review), the
   userscript probably isn't getting through. Surface to the user:
@@ -218,10 +237,18 @@ Note: This only covers inline review comments (`/pulls/<NUMBER>/comments`), not 
 
 ## Step 3: Decide outcome
 
-**Before deciding:** Confirm at least one submitted Copilot review exists (filter out pending reviews where `submitted_at` is null):
-  gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null)] | length'
+**Before deciding:** Confirm at least one submitted Copilot review exists (filter out pending reviews where `submitted_at` is null). Aggregate per-page lengths to get a single integer (--paginate runs jq per page):
+  gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews --jq '[.[] | select(.user.login | test("copilot"; "i")) | select(.submitted_at != null)] | length' | awk '{s+=$1} END{print s}'
 
-If the count is 0, no Copilot review has been submitted yet. Report "No Copilot review found — was it requested? Check the Reviewers sidebar in the GitHub PR interface." and delete this cron job.
+If the count is 0, no Copilot review has been submitted yet (note: Step 1 already exits if Copilot is pending, so reaching this point means no review is in flight). Attempt to request review via API (one-shot, no userscript fallback). Discover COPILOT_LOGIN first (check review history, then hardcoded fallback):
+  COPILOT_LOGIN=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/reviews \
+    --jq '.[].user.login' | grep -i 'copilot' | head -1 || true)
+  if [ -z "$COPILOT_LOGIN" ]; then
+    COPILOT_LOGIN="copilot-pull-request-reviewer[bot]"
+  fi
+  if API_RESPONSE=$(gh api repos/<REPO>/pulls/<NUMBER>/requested_reviewers \
+    -X POST -f "reviewers[]=$COPILOT_LOGIN" 2>&1); then API_EXIT=0; else API_EXIT=$?; fi
+If API_EXIT == 0, keep polling. If it fails, check the error: if the response contains "Not Found" or "Forbidden", report "Could not request Copilot review — no write access. Ask a repo maintainer to request review manually." and delete this cron job. For other errors (network, rate limit), report the actual error and keep polling (transient failure).
 
 **Staleness check:** Determine when Copilot last completed a review by using the latest comment timestamp (primary signal) with review `submitted_at` as fallback for LGTM reviews (no comments). Emit one value per item across pages and compute max in shell (avoids per-page sort issue with `--paginate`):
   LAST_COMMENT=$(gh api --paginate repos/<REPO>/pulls/<NUMBER>/comments --jq '.[] | select(.user.login | test("copilot"; "i")) | select(.in_reply_to_id == null) | .created_at' | sort | tail -n 1)
@@ -243,28 +270,26 @@ Compare: `echo "$LAST_PUSH $LAST_REVIEW" | jq -R 'split(" ") | (.[0] | fromdatei
 
 Decide:
 
-1. **PUSH_AGE < 900 (within 15 minutes):** Output nothing and stop — keep polling to give Copilot time.
+1. **PUSH_AGE < 180 (within 3 minutes):** Output nothing and stop — keep polling to give Copilot time. (Reduced from 15 min: the API request in Step 0h triggers review immediately, so 3 min is sufficient for Copilot to process.)
 
-2. **PUSH_AGE >= 900:** The push didn't draw an auto-triggered review within 15 minutes. Step 0 (the userscript handshake) should have already posted a marker if all gates were satisfied — check the PR body for our WATCHER_ID's marker.
+2. **PUSH_AGE >= 180:** The push didn't draw a review within 3 minutes. Step 0 should have already requested review (via API or userscript fallback).
 
-   - **If our marker is still in the PR body and unexpired:** the userscript hasn't acted yet (browser tab not open, userscript not installed, or browser-side click failed). Continue to Step 0j-style timeout fallback when the marker expires. Output nothing this poll.
+   - **If Step 0's API request succeeded on a prior poll:** Copilot was requested but hasn't responded. This is unusual — surface to the user:
 
-   - **If our marker WAS posted but has been stripped or expired without a state change:** the handshake didn't deliver. Surface to the user (per [[feedback_copilot_review_manual_trigger]] — goodies-managed and intel-sandbox repos have unreliable subsequent-push triggers; never auto-retry force-push):
-
-     "Push at <LAST_PUSH> didn't draw a Copilot review after >15 min on PR #<NUMBER>. Two likely causes:
-       [a] Userscript not installed / browser tab not open → click 'Request review' on Copilot manually
-       [b] Skip — this push doesn't need re-review (revisit later)
+     "Copilot was requested via API but hasn't started reviewing PR #<NUMBER> after >3 min. This may indicate a transient GitHub-side delay.
+       [a] Re-request — try the API call again
+       [b] Wait — keep polling without re-requesting (review may still arrive)
       Which?"
 
-     Wait for user response before acting. On [a], the watcher just keeps polling. On [b], delete the cron job and exit.
+     On [a], re-run the API request. On [b], continue polling without surfacing this prompt again until a new push lands.
 
-   - **If Step 0 decided NOT to post a marker** (e.g. because Step 0f detected last review was LGTM, or Step 0g found open threads): the watcher and userscript correctly aren't trying to act. The push age alone isn't a problem; a fresh push without comments-to-address-yet is the user's normal flow. Output nothing.
+   - **If Step 0 fell back to the userscript handshake:** check the PR body for our WATCHER_ID's marker. If markers have been posted across >= 3 polls (~9 min) without state change, trigger Step 0j's timeout fallback prompt.
 
-   The legacy v0.x behavior — auto-amending the commit timestamp and force-pushing to retry the auto-trigger — is removed in v1.0. That workaround was for repos where the auto-trigger is disabled, and the v1.0 userscript handshake replaces it. If neither auto-trigger nor userscript work, the user prompt above is the correct fallback.
+   - **If Step 0 decided NOT to request** (e.g. because Step 0f detected last review was LGTM, or Step 0g found open threads): the push age alone isn't a problem; a fresh push without comments-to-address-yet is the user's normal flow. Output nothing.
 
 **Case A — No pending review + no unreplied inline comments + review is fresh:**
 Report "Copilot review complete — no unreplied inline comments. LGTM!" then:
-1. Strip ONLY our own userscript marker block (writer=$WATCHER_ID) from the PR body if present (handshake hygiene — leaves the body clean for merge). Other watchers' markers survive untouched:
+1. If the userscript fallback was used, strip ONLY our own marker block (writer=$WATCHER_ID) from the PR body if present (handshake hygiene — leaves the body clean for merge). If the API path was used (no marker was ever posted), skip this step. Other watchers' markers survive untouched:
    ```
    OLD_BODY=$(gh api repos/<REPO>/pulls/<NUMBER> --jq .body)
    NEW_BODY=$(printf '%s' "$OLD_BODY" | WATCHER_ID="$WATCHER_ID" python3 -c '
