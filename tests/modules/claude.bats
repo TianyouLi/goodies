@@ -672,3 +672,272 @@ FAKE
     assert_success
     assert_output "alias"
 }
+
+@test "env.sh exports GOODIES_SCRIPTS pointing to modules/claude/scripts" {
+    run bash -c "source \"$GOODIES_ROOT/modules/claude/env.sh\"; echo \"\$GOODIES_SCRIPTS\""
+    assert_success
+    assert_output "$GOODIES_ROOT/modules/claude/scripts"
+}
+
+@test "goodies-watch-poll.sh exists and is executable" {
+    [ -x "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" ]
+}
+
+@test "goodies-watch-poll.sh passes bash syntax check" {
+    run bash -n "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh"
+    assert_success
+}
+
+@test "goodies-watch-poll.sh exits 3 with usage when called with no args" {
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh"
+    assert_failure 3
+    assert_output --partial "Usage:"
+}
+
+# ---------------------------------------------------------------------------
+# goodies-watch-poll.sh behaviour tests (mock gh)
+# The mock gh: returns raw JSON per endpoint, then applies --jq filter via
+# real jq so the script gets correctly filtered output.
+# ---------------------------------------------------------------------------
+
+# Write a mock gh that reads raw JSON from env vars per endpoint pattern,
+# applies any --jq filter via real jq, and handles PATCH/POST/--include.
+_write_mock_gh() {
+    local mock_bin="$TEST_HOME/mock-bin"
+    mkdir -p "$mock_bin"
+    # Set defaults for all env vars before writing the mock, so the mock
+    # itself never needs ${VAR:-json-with-braces} expansions (which break
+    # because the closing } in the JSON terminates the parameter expansion).
+    export GH_MOCK_PR="${GH_MOCK_PR:-}"
+    export GH_MOCK_REQUESTED_REVIEWERS="${GH_MOCK_REQUESTED_REVIEWERS:-}"
+    export GH_MOCK_REVIEWS="${GH_MOCK_REVIEWS:-[]}"
+    export GH_MOCK_COMMENTS="${GH_MOCK_COMMENTS:-[]}"
+    export GH_MOCK_GRAPHQL="${GH_MOCK_GRAPHQL:-}"
+    export GH_MOCK_LAST_PUSH="${GH_MOCK_LAST_PUSH:-}"
+    export GH_MOCK_NOW_HEADER="${GH_MOCK_NOW_HEADER:-Mon, 01 Jan 2024 04:00:00 GMT}"
+    export GH_MOCK_REVIEW_POST_RESPONSE="${GH_MOCK_REVIEW_POST_RESPONSE:-}"
+    export GH_MOCK_REVIEW_POST_EXIT="${GH_MOCK_REVIEW_POST_EXIT:-1}"
+
+    cat > "$mock_bin/gh" <<'ENDMOCK'
+#!/bin/bash
+# Extract --jq filter if present (consuming --jq and its argument)
+jq_filter=""
+newargs=()
+i=1
+while [[ $i -le $# ]]; do
+    arg="${!i}"
+    if [[ "$arg" == "--jq" ]]; then
+        i=$((i+1))
+        jq_filter="${!i}"
+    else
+        newargs+=("$arg")
+    fi
+    i=$((i+1))
+done
+
+emit() {
+    if [[ -n "$jq_filter" ]]; then
+        printf '%s' "$1" | jq -r "$jq_filter"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+all_args="${newargs[*]:-}"
+
+# Resolve defaults that couldn't safely be in ${VAR:-json} form
+_pr="${GH_MOCK_PR}"
+[[ -z "$_pr" ]] && _pr='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+_rr="${GH_MOCK_REQUESTED_REVIEWERS}"
+[[ -z "$_rr" ]] && _rr='{"users":[],"teams":[]}'
+_gql="${GH_MOCK_GRAPHQL}"
+[[ -z "$_gql" ]] && _gql='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+
+case "$all_args" in
+    *"--include"*)
+        printf 'date: %s\n\n' "$GH_MOCK_NOW_HEADER" ;;
+    *"--method PATCH"*|*"-X PATCH"*)
+        exit 0 ;;
+    *"requested_reviewers"*"-X POST"*)
+        printf '%s\n' "$GH_MOCK_REVIEW_POST_RESPONSE"
+        exit "$GH_MOCK_REVIEW_POST_EXIT" ;;
+    *"requested_reviewers"*)
+        emit "$_rr" ;;
+    *"graphql"*"pushedDate"*)
+        # get_last_push_date query — return pushedDate+committedDate structure
+        # GH_MOCK_PUSH_DATE_NULL=1 simulates pushedDate=null (fallback to committedDate)
+        if [[ "${GH_MOCK_PUSH_DATE_NULL:-}" == "1" ]]; then
+            _committed="${GH_MOCK_LAST_PUSH:-2024-01-01T00:00:00Z}"
+            printf '{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"pushedDate":null,"committedDate":"%s"}}]}}}}}\n' "$_committed"
+        else
+            _push_date="${GH_MOCK_LAST_PUSH:-2024-01-01T00:00:00Z}"
+            printf '{"data":{"repository":{"pullRequest":{"commits":{"nodes":[{"commit":{"pushedDate":"%s","committedDate":"%s"}}]}}}}}\n' "$_push_date" "$_push_date"
+        fi ;;
+    *"graphql"*)
+        emit "$_gql" ;;
+    *"reviews"*)
+        emit "$GH_MOCK_REVIEWS" ;;
+    *"events"*)
+        if [[ -n "$GH_MOCK_LAST_PUSH" ]]; then
+            emit "[{\"type\":\"PushEvent\",\"payload\":{\"ref\":\"refs/heads/feat/test\"},\"created_at\":\"$GH_MOCK_LAST_PUSH\"}]"
+        else
+            emit "[]"
+        fi ;;
+    *"comments"*)
+        emit "$GH_MOCK_COMMENTS" ;;
+    *"assignees"*)
+        emit "[]" ;;
+    *"pulls/"*)
+        emit "$_pr" ;;
+    *)
+        emit "[]" ;;
+esac
+ENDMOCK
+    chmod +x "$mock_bin/gh"
+    export PATH="$mock_bin:$PATH"
+}
+
+@test "poll script exits 3 when PR is closed" {
+    _write_mock_gh
+    export GH_MOCK_PR='{"state":"closed","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0001"
+    assert_failure 3
+    assert_output --partial "PR is closed"
+}
+
+@test "poll script exits 0 silently when Copilot review is pending" {
+    _write_mock_gh
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[{"login":"copilot-pull-request-reviewer[bot]"}],"teams":[]}'
+    export GH_MOCK_REVIEWS='[]'
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0002"
+    assert_success
+    refute_output
+}
+
+@test "poll script exits 2 (LGTM) when review is current with no inline comments" {
+    _write_mock_gh
+    # Push at 00:00, review at 00:30 (review AFTER push — current), no inline comments
+    # → review is current, CMT_COUNT_LATEST=0 → LGTM
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    export GH_MOCK_REVIEWS='[{"user":{"login":"copilot-pull-request-reviewer[bot]"},"submitted_at":"2024-01-01T00:30:00Z","state":"APPROVED"}]'
+    export GH_MOCK_LAST_PUSH="2024-01-01T00:00:00Z"
+    export GH_MOCK_COMMENTS='[]'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}'
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0003"
+    assert_failure 2
+    refute_output
+}
+
+@test "poll script exits 1 with findings when review is current with open threads" {
+    _write_mock_gh
+    # Push at 00:00, review at 00:30 (review current), has inline comment, thread unresolved
+    # → falls through to Steps 1-3 → unreplied comment → exit 1 with findings JSON
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    # Review id=999; comment pull_request_review_id=999 so exact-ID matching is exercised
+    export GH_MOCK_REVIEWS='[{"id":999,"user":{"login":"copilot-pull-request-reviewer[bot]"},"submitted_at":"2024-01-01T00:30:00Z","state":"CHANGES_REQUESTED"}]'
+    export GH_MOCK_LAST_PUSH="2024-01-01T00:00:00Z"
+    export GH_MOCK_COMMENTS='[{"id":101,"pull_request_review_id":999,"user":{"login":"copilot-pull-request-reviewer[bot]"},"in_reply_to_id":null,"path":"foo.sh","line":10,"body":"Fix this","created_at":"2024-01-01T00:31:00Z"}]'
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"isResolved":false,"isOutdated":false,"comments":{"nodes":[{"author":{"login":"copilot-pull-request-reviewer[bot]"}}]}}]}}}}}'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0003b"
+    assert_failure 1
+    assert_output --partial '"action":"findings"'
+    assert_output --partial '"comments"'
+}
+
+@test "poll script exits 0 when API fails but marker is fresh (keep polling)" {
+    _write_mock_gh
+    # All threads resolved (OPEN_THREADS=0), API fails, no existing marker yet
+    # → posts fresh marker and exits 0
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    export GH_MOCK_REVIEWS='[{"user":{"login":"copilot-pull-request-reviewer[bot]"},"submitted_at":"2024-01-01T00:30:00Z","state":"CHANGES_REQUESTED"}]'
+    export GH_MOCK_LAST_PUSH="2024-01-01T01:00:00Z"
+    export GH_MOCK_COMMENTS='[{"id":101,"user":{"login":"copilot-pull-request-reviewer[bot]"},"in_reply_to_id":null,"path":"foo.sh","line":10,"body":"Fix this","created_at":"2024-01-01T00:31:00Z"}]'
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    export GH_MOCK_REVIEW_POST_RESPONSE='{"message":"Forbidden"}'
+    export GH_MOCK_REVIEW_POST_EXIT=1
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0004"
+    assert_success
+    refute_output
+}
+
+@test "poll script exits 1 with timeout_fallback when own marker has expired" {
+    _write_mock_gh
+    # All threads resolved (OPEN_THREADS=0), API fails, PR body has OUR expired marker
+    # → post_or_refresh_marker detects expired → exits 1 with timeout_fallback
+    local expired_body
+    expired_body='some pr text
+
+<details><summary>goodies-watch handshake (writer=w-test-0005)</summary>
+
+goodies-watch:click-request-review nonce=aabbccdd expires=2024-01-01T00:10:00Z writer=w-test-0005
+</details>'
+    export GH_MOCK_PR="{\"state\":\"open\",\"head\":{\"ref\":\"feat/test\"},\"created_at\":\"2024-01-01T00:00:00Z\",\"body\":$(printf '%s' "$expired_body" | jq -Rs .)}"
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    export GH_MOCK_REVIEWS='[{"user":{"login":"copilot-pull-request-reviewer[bot]"},"submitted_at":"2024-01-01T00:30:00Z","state":"CHANGES_REQUESTED"}]'
+    export GH_MOCK_LAST_PUSH="2024-01-01T01:00:00Z"
+    export GH_MOCK_COMMENTS='[{"id":101,"user":{"login":"copilot-pull-request-reviewer[bot]"},"in_reply_to_id":null,"path":"foo.sh","line":10,"body":"Fix this","created_at":"2024-01-01T00:31:00Z"}]'
+    # All threads resolved → OPEN_THREADS=0 → NEED_REQUEST=true → Step 0h
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    export GH_MOCK_REVIEW_POST_RESPONSE='{"message":"Forbidden"}'
+    export GH_MOCK_REVIEW_POST_EXIT=1
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0005"
+    assert_failure 1
+    assert_output --partial '"action":"timeout_fallback"'
+}
+
+@test "poll script exits 0 when API review request succeeds (no marker posted)" {
+    _write_mock_gh
+    # No pending reviewer, but Copilot has a prior review (COPILOT_EVER=true).
+    # Push is newer than last review → NEED_REQUEST=true → Step 0h fires.
+    # API POST returns success (Copilot now pending) → exit 0 without posting a marker.
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    export GH_MOCK_REVIEWS='[{"user":{"login":"copilot-pull-request-reviewer[bot]"},"submitted_at":"2024-01-01T00:30:00Z","state":"CHANGES_REQUESTED"}]'
+    export GH_MOCK_LAST_PUSH="2024-01-01T01:00:00Z"
+    export GH_MOCK_COMMENTS='[{"id":101,"user":{"login":"copilot-pull-request-reviewer[bot]"},"in_reply_to_id":null,"path":"foo.sh","line":10,"body":"Fix this","created_at":"2024-01-01T00:31:00Z"}]'
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    # POST returns reviewers list with Copilot — request_copilot_review succeeds
+    export GH_MOCK_REVIEW_POST_RESPONSE='{"requested_reviewers":[{"login":"copilot-pull-request-reviewer[bot]"}]}'
+    export GH_MOCK_REVIEW_POST_EXIT=0
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0006"
+    assert_success
+    refute_output
+}
+
+@test "poll script uses committedDate when pushedDate is null" {
+    _write_mock_gh
+    # Simulate a repo where pushedDate=null but committedDate is set (e.g. web-editor commits).
+    # The commit timestamp predates the last review → push is NOT newer → check review content.
+    # Review has an unreplied comment with an open thread → exit 1 with findings.
+    export GH_MOCK_PR='{"state":"open","head":{"ref":"feat/test"},"created_at":"2024-01-01T00:00:00Z","body":""}'
+    export GH_MOCK_REQUESTED_REVIEWERS='{"users":[],"teams":[]}'
+    export GH_MOCK_REVIEWS='[{"user":{"login":"copilot-pull-request-reviewer[bot]"},"id":9001,"submitted_at":"2024-01-01T01:00:00Z","state":"CHANGES_REQUESTED"}]'
+    # pushedDate=null → script must fall back to committedDate (2024-01-01T00:30:00Z)
+    # committedDate < last review (01:00:00) → push is NOT newer than review → continue to Step 0f
+    export GH_MOCK_PUSH_DATE_NULL=1
+    export GH_MOCK_LAST_PUSH="2024-01-01T00:30:00Z"
+    export GH_MOCK_COMMENTS='[{"id":201,"pull_request_review_id":9001,"user":{"login":"copilot-pull-request-reviewer[bot]"},"in_reply_to_id":null,"path":"foo.sh","line":5,"body":"Use quotes","created_at":"2024-01-01T01:00:00Z"}]'
+    export GH_MOCK_GRAPHQL='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"isResolved":false,"isOutdated":false,"comments":{"nodes":[{"author":{"login":"copilot-pull-request-reviewer[bot]"}}]}}]}}}}}'
+    export GH_MOCK_NOW_HEADER="Mon, 01 Jan 2024 04:00:00 GMT"
+    run bash "$GOODIES_ROOT/modules/claude/scripts/goodies-watch-poll.sh" \
+        "owner/repo" "42" "w-test-0007"
+    assert_failure 1
+    assert_output --partial '"action":"findings"'
+    assert_output --partial '"id":201'
+}
